@@ -1,0 +1,71 @@
+{
+  "autoCorrect": {
+    "enabled": true,
+    "maxFileSize": "1MB",
+    "timeout": 30000,
+    "retryAttempts": 3
+  },
+  "corrections": [
+    {
+      "ruleId": "no-unused-vars",
+      "enabled": true,
+      "action": "remove",
+      "description": "Remove unused variables automatically"
+    },
+    {
+      "ruleId": "prefer-const",
+      "enabled": true,
+      "action": "replace",
+      "pattern": "let ",
+      "replacement": "const ",
+      "description": "Replace let with const when appropriate"
+    },
+    {
+      "ruleId": "no-console-logs",
+      "enabled": true,
+      "action": "replace",
+      "pattern": "console.log(",
+      "replacement": "logger.info(",
+      "description": "Replace console.log with Winston logger"
+    },
+    {
+      "ruleId": "no-duplicate-imports",
+      "enabled": true,
+      "action": "merge",
+      "description": "Merge duplicate imports from same module"
+    },
+    {
+      "ruleId": "eslint-auto-fix",
+      "enabled": true,
+      "action": "run-eslint-fix",
+      "description": "Run ESLint --fix for auto-fixable issues"
+    },
+    {
+      "ruleId": "prettier-format",
+      "enabled": true,
+      "action": "run-prettier",
+      "extensions": ["js", "ts", "jsx", "tsx", "json", "md"],
+      "description": "Format code with Prettier"
+    }
+  ],
+  "notifications": {
+    "onSuccess": false,
+    "onFailure": true,
+    "channels": ["slack", "email"],
+    "throttle": 300000
+  },
+  "conditions": [
+    {
+      "name": "file-too-large",
+      "condition": "fileSize > maxFileSize",
+      "action": "skip",
+      "notify": true
+    },
+    {
+      "name": "too-many-attempts",
+      "condition": "retryCount >= retryAttempts",
+      "action": "notify",
+      "notify": true
+    }
+  ]
+}

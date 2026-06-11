@@ -1,0 +1,61 @@
+{
+  "rules": [
+    {
+      "id": "no-unused-vars",
+      "enabled": true,
+      "severity": "error",
+      "extensions": ["js", "ts", "jsx", "tsx"],
+      "description": "Variables declared but never used should be removed or prefixed with underscore"
+    },
+    {
+      "id": "no-console-logs",
+      "enabled": true,
+      "severity": "warn",
+      "extensions": ["js", "ts", "jsx", "tsx"],
+      "description": "Replace console.log with Winston logger"
+    },
+    {
+      "id": "no-explicit-any",
+      "enabled": true,
+      "severity": "warn",
+      "extensions": ["ts", "tsx"],
+      "description": "Avoid using 'any' type, use specific types instead"
+    },
+    {
+      "id": "prefer-const",
+      "enabled": true,
+      "severity": "error",
+      "extensions": ["js", "ts", "jsx", "tsx"],
+      "description": "Use const instead of let when variable is never reassigned"
+    },
+    {
+      "id": "no-duplicate-imports",
+      "enabled": true,
+      "severity": "error",
+      "extensions": ["js", "ts", "jsx", "tsx"],
+      "description": "Merge duplicate imports from the same module"
+    },
+    {
+      "id": "json-validation",
+      "enabled": true,
+      "severity": "error",
+      "extensions": ["json"],
+      "description": "Validate JSON syntax"
+    },
+    {
+      "id": "markdown-linting",
+      "enabled": false,
+      "severity": "warn",
+      "extensions": ["md"],
+      "description": "Check markdown formatting (disabled by default)"
+    }
+  ],
+  "globalExclusions": [
+    "node_modules/**",
+    ".git/**",
+    "dist/**",
+    "build/**",
+    "*.min.js",
+    ".watcher/**"
+  ]
+}
