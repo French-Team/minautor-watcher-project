@@ -1,30 +1,30 @@
-import EventEmitter from 'events';
-import { FileEvent } from './filters.js';
-import { createChildLogger } from '../shared/logger.js';
+import EventEmitter from "events";
+import { FileEvent } from "./filters.js";
+import { createChildLogger } from "../shared/logger.js";
 
-const logger = createChildLogger('detection-events');
+const logger = createChildLogger("detection-events");
 
 /**
  * Custom event types for the detection module
  */
 export enum DetectionEvent {
   // File system events
-  FILE_DETECTED = 'fileDetected',
-  FILE_MODIFIED = 'fileModified',
-  FILE_DELETED = 'fileDeleted',
+  FILE_DETECTED = "fileDetected",
+  FILE_MODIFIED = "fileModified",
+  FILE_DELETED = "fileDeleted",
 
   // Processing events
-  PROCESSING_STARTED = 'processingStarted',
-  PROCESSING_COMPLETED = 'processingCompleted',
-  PROCESSING_FAILED = 'processingFailed',
+  PROCESSING_STARTED = "processingStarted",
+  PROCESSING_COMPLETED = "processingCompleted",
+  PROCESSING_FAILED = "processingFailed",
 
   // Batch events
-  BATCH_STARTED = 'batchStarted',
-  BATCH_COMPLETED = 'batchCompleted',
+  BATCH_STARTED = "batchStarted",
+  BATCH_COMPLETED = "batchCompleted",
 
   // Error events
-  DETECTION_ERROR = 'detectionError',
-  VALIDATION_ERROR = 'validationError',
+  DETECTION_ERROR = "detectionError",
+  VALIDATION_ERROR = "validationError",
 }
 
 /**
@@ -32,7 +32,7 @@ export enum DetectionEvent {
  */
 export interface FileDetectedEvent {
   file: FileEvent;
-  source: 'watcher' | 'scan';
+  source: "watcher" | "scan";
 }
 
 export interface ProcessingEvent {
@@ -76,7 +76,10 @@ export class DetectionEventBus extends EventEmitter {
   /**
    * Emit file detected event
    */
-  emitFileDetected(file: FileEvent, source: 'watcher' | 'scan' = 'watcher'): void {
+  emitFileDetected(
+    file: FileEvent,
+    source: "watcher" | "scan" = "watcher"
+  ): void {
     const event: FileDetectedEvent = { file, source };
     logger.debug(`Emitting FILE_DETECTED: ${file.filePath}`);
     this.emit(DetectionEvent.FILE_DETECTED, event);
@@ -107,7 +110,9 @@ export class DetectionEventBus extends EventEmitter {
       processor,
       startTime: new Date(),
     };
-    logger.debug(`Emitting PROCESSING_STARTED: ${file.filePath} by ${processor}`);
+    logger.debug(
+      `Emitting PROCESSING_STARTED: ${file.filePath} by ${processor}`
+    );
     this.emit(DetectionEvent.PROCESSING_STARTED, event);
   }
 
@@ -132,7 +137,9 @@ export class DetectionEventBus extends EventEmitter {
       metadata,
     };
 
-    logger.debug(`Emitting PROCESSING_COMPLETED: ${file.filePath} by ${processor} (${duration}ms)`);
+    logger.debug(
+      `Emitting PROCESSING_COMPLETED: ${file.filePath} by ${processor} (${duration}ms)`
+    );
     this.emit(DetectionEvent.PROCESSING_COMPLETED, event);
   }
 
@@ -159,7 +166,9 @@ export class DetectionEventBus extends EventEmitter {
       metadata,
     };
 
-    logger.warn(`Emitting PROCESSING_FAILED: ${file.filePath} by ${processor}: ${error.message}`);
+    logger.warn(
+      `Emitting PROCESSING_FAILED: ${file.filePath} by ${processor}: ${error.message}`
+    );
     this.emit(DetectionEvent.PROCESSING_FAILED, event);
   }
 
@@ -198,7 +207,9 @@ export class DetectionEventBus extends EventEmitter {
       duration,
     };
 
-    logger.info(`Emitting BATCH_COMPLETED: ${processedCount}/${totalCount} processed, ${failedCount} failed (${duration}ms)`);
+    logger.info(
+      `Emitting BATCH_COMPLETED: ${processedCount}/${totalCount} processed, ${failedCount} failed (${duration}ms)`
+    );
     this.emit(DetectionEvent.BATCH_COMPLETED, event);
   }
 
@@ -223,7 +234,7 @@ export class DetectionEventBus extends EventEmitter {
   emitValidationError(error: Error, file?: FileEvent): void {
     const event: DetectionErrorEvent = {
       error,
-      context: 'validation',
+      context: "validation",
       file,
       timestamp: new Date(),
     };
@@ -262,12 +273,12 @@ export class EventUtils {
       try {
         await handler(data);
       } catch (error) {
-        logger.error('Error in async event handler:', error);
+        logger.error("Error in async event handler:", error);
         // Re-emit as detection error if possible
         if (eventBus.listenerCount(DetectionEvent.DETECTION_ERROR) > 0) {
           eventBus.emitDetectionError(
             error instanceof Error ? error : new Error(String(error)),
-            'event_handler'
+            "event_handler"
           );
         }
       }
@@ -300,7 +311,11 @@ export class EventUtils {
  * Event handler decorators for cleaner code
  */
 export function OnEvent(event: DetectionEvent) {
-  return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+  return function (
+    target: any,
+    propertyKey: string,
+    descriptor: PropertyDescriptor
+  ) {
     const method = descriptor.value;
 
     // Register the method as an event listener

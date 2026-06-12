@@ -1,0 +1,117 @@
+{
+  // Watcher Service - Example Configuration
+  // Copy this file to config.jsonc and customize
+
+  // Watch directory (can also be set via WATCH_DIR env var)
+  "watchDir": "./src",
+
+  // Prevention module configuration
+  "prevention": {
+    "enabled": true,
+    "rules": [
+      {
+        "id": "eslint-validation",
+        "name": "ESLint Validation",
+        "description": "Validate JS/TS code with ESLint",
+        "enabled": true,
+        "severity": "error",
+        "category": "syntax",
+        "validators": ["eslint"],
+        "scripts": ["eslint-fix"],
+        "conditions": {
+          "fileExtensions": ["js", "ts", "jsx", "tsx"]
+        },
+        "actions": {
+          "autoFix": true,
+          "notifyOnFailure": true,
+          "blockCommit": true
+        }
+      },
+      {
+        "id": "prettier-formatting",
+        "name": "Prettier Formatting",
+        "description": "Format code with Prettier",
+        "enabled": true,
+        "severity": "warning",
+        "category": "style",
+        "validators": [],
+        "scripts": ["prettier-format"],
+        "conditions": {
+          "fileExtensions": ["js", "ts", "jsx", "tsx", "json", "md"]
+        },
+        "actions": {
+          "autoFix": true,
+          "notifyOnFailure": false,
+          "blockCommit": false
+        }
+      },
+      {
+        "id": "json-validation",
+        "name": "JSON Validation",
+        "description": "Validate JSON file syntax",
+        "enabled": true,
+        "severity": "error",
+        "category": "syntax",
+        "validators": ["json"],
+        "scripts": [],
+        "conditions": {
+          "fileExtensions": ["json"]
+        },
+        "actions": {
+          "autoFix": false,
+          "notifyOnFailure": true,
+          "blockCommit": true
+        }
+      }
+    ],
+    "globalSettings": {
+      "failOnError": true,
+      "failOnWarning": false,
+      "maxExecutionTime": 30000,
+      "parallelExecution": true
+    }
+  },
+
+  // Trigger module configuration
+  "trigger": {
+    "rules": [
+      {
+        "id": "auto-fix-eslint",
+        "name": "Auto-fix ESLint errors",
+        "description": "Run ESLint --fix on files with fixable errors",
+        "enabled": true,
+        "priority": 10,
+        "conditions": {
+          "eventTypes": ["fileDetected", "fileModified"],
+          "fileExtensions": ["js", "ts", "jsx", "tsx"]
+        },
+        "actions": [
+          {
+            "type": "correct",
+            "config": { "correctorId": "eslint-fix" }
+          }
+        ]
+      },
+      {
+        "id": "notify-errors",
+        "name": "Notify on errors",
+        "description": "Send notification when errors are detected",
+        "enabled": true,
+        "priority": 5,
+        "conditions": {
+          "severity": "error"
+        },
+        "actions": [
+          {
+            "type": "notify",
+            "config": { "channel": "console" }
+          }
+        ],
+        "cooldown": {
+          "enabled": true,
+          "period": 60000
+        }
+      }
+    ]
+  }
+}

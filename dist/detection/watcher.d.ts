@@ -1,4 +1,4 @@
-import EventEmitter from 'events';
+import EventEmitter from "events";
 /**
  * Custom events emitted by the watcher
  */
@@ -37,7 +37,7 @@ export declare class Watcher extends EventEmitter {
      */
     stop(): Promise<void>;
     /**
-     * Create ignore patterns for Chokidar
+     * Create ignore patterns for Chokidar (glob strings)
      */
     private createIgnorePatterns;
     /**

@@ -3,6 +3,7 @@
 Ce guide couvre les aspects avancés du déploiement, incluant l'intégration CI/CD, le déploiement sur serveur, et les intégrations externes. Il complète le guide de setup pour une finition professionnelle.
 
 ## 1. Déploiement Local Avancé
+
 - **Environnement de production** : Utilisez `NODE_ENV=production` pour désactiver les logs verbeux.
 - **PM2 pour gestion de processus** :
   ```bash
@@ -13,6 +14,7 @@ Ce guide couvre les aspects avancés du déploiement, incluant l'intégration CI
 - **Monitoring** : Intégrez Winston avec des transports fichier pour logs persistants.
 
 ## 2. Déploiement sur Serveur (Ex. : VPS ou Cloud)
+
 - **Prérequis** : Node.js installé sur le serveur.
 - **Copie et installation** :
   1. Téléchargez/copiez le dossier Watcher.
@@ -30,6 +32,7 @@ Ce guide couvre les aspects avancés du déploiement, incluant l'intégration CI
   ```
 
 ## 3. Intégration CI/CD (Ex. : GitHub Actions)
+
 - **Workflow exemple** (`github/workflows/ci.yml`) :
   ```yaml
   name: CI/CD
@@ -41,9 +44,9 @@ Ce guide couvre les aspects avancés du déploiement, incluant l'intégration CI
         - uses: actions/checkout@v2
         - uses: actions/setup-node@v2
           with:
-            node-version: '18'
+            node-version: "18"
         - run: npm ci
-        - run: npm test  # Jest
+        - run: npm test # Jest
     deploy:
       if: github.ref == 'refs/heads/main'
       runs-on: ubuntu-latest
@@ -53,6 +56,7 @@ Ce guide couvre les aspects avancés du déploiement, incluant l'intégration CI
 - **Tests automatisés** : Intégrez Jest pour vérifier les secteurs avant déploiement.
 
 ## 4. Intégrations Externes
+
 - **Slack Notifications** : Configurez `@slack/web-api` avec un webhook pour alertes en temps réel.
 - **Email via Nodemailer** : Utilisez SMTP (Gmail ou SendGrid) pour rapports d'erreurs.
 - **Monitoring Externe** : Intégrez Sentry pour suivi des erreurs :
@@ -62,6 +66,7 @@ Ce guide couvre les aspects avancés du déploiement, incluant l'intégration CI
 - **API Exposition** (optionnel) : Ajoutez Express pour une API REST si besoin d'interactions externes.
 
 ## 5. Déploiement Cloud (Ex. : Heroku, Netlify)
+
 - **Heroku** :
   1. Créez une app : `heroku create mon-watcher`.
   2. Poussez le code : `git push heroku main`.
@@ -69,12 +74,14 @@ Ce guide couvre les aspects avancés du déploiement, incluant l'intégration CI
 - **Optimisations** : Utilisez des buildpacks Node.js et activez les logs.
 
 ## 6. Maintenance et Mises à Jour
+
 - **Monitoring continu** : Surveillez les logs Winston pour détecter les problèmes.
 - **Mises à jour** : Utilisez `npm outdated` pour vérifier les dépendances et mettre à jour sans casser la compatibilité.
 - **Rollback** : Gardez des sauvegardes des fichiers surveillés avant corrections majeures.
 - **Sécurité** : Auditez régulièrement avec `npm audit` et appliquez Joi pour valider les configs.
 
 ## Conseils
+
 - Testez toujours en staging avant prod.
 - Référence : [watcher-requirements.md - Déploiement](./watcher-requirements.md).
 - Pour des besoins spécifiques, adaptez ce guide.

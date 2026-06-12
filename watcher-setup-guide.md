@@ -1,12 +1,15 @@
 # Guide d'Orchestration du Watcher - Préparation, Installation et Configuration
 
 ## Introduction
+
 Ce document orchestre la préparation, l'installation et la configuration du service Watcher de manière méthodique et ordonnée. Il indexe les documents Markdown existants (`watcher-specification.md`, `watcher-requirements.md`, `watcher-capabilities.md`, `watcher-dependencies.md`) et réunit leurs informations pour clarifier le développement du Watcher. L'objectif est de transformer le Watcher en un outil portable, intelligent et intégré pour surveiller, prévenir et corriger automatiquement les projets.
 
 Ce guide sert de référence centrale pour les développeurs, en reliant les spécifications, exigences, capacités et dépendances en un workflow cohérent.
 
 ## Index des Documents de Référence
+
 Voici un index des fichiers Markdown liés, avec des liens vers leurs contenus pour une navigation facile :
+
 - **[watcher-specification.md](./watcher-specification.md)** : Définit les objectifs principaux du Watcher (surveillance, prévention, correction) et son contexte d'utilisation.
 - **[watcher-requirements.md](./watcher-requirements.md)** : Liste les besoins fonctionnels, techniques, de configuration et de sécurité pour l'implémentation.
 - **[watcher-capabilities.md](./watcher-capabilities.md)** : Détaille les idées étendues, les rôles du Watcher (yeux, guide, correcteur) et les systèmes de déclenchement.
@@ -17,7 +20,9 @@ Voici un index des fichiers Markdown liés, avec des liens vers leurs contenus p
 Ces documents doivent être consultés en parallèle pour une compréhension complète.
 
 ## Synthèse : Ce que le Watcher Doit Devenir et Comment le Coder
+
 Basé sur les documents indexés, le Watcher doit évoluer en un service intelligent et autonome :
+
 - **Vision globale** : Un outil qui agit comme les "yeux" de l'équipe, surveillant les projets en temps réel, appliquant des correctifs automatiques et informant sur les déviations. Il doit être portable, s'intégrer facilement via copie de dossier et configuration `.env.local`, et s'adapter à des projets simples ou complexes.
 - **Fonctionnalités clés** :
   - Surveillance en temps réel des fichiers (HTML, CSS, TSX, etc.) avec exclusion automatique du dossier Watcher.
@@ -34,9 +39,11 @@ Basé sur les documents indexés, le Watcher doit évoluer en un service intelli
 - **Méthodologie de développement** : Commencer par un MVP (surveillance de base), ajouter des couches (prévention, correction), tester itérativement, et assurer la portabilité. Appliquer les bonnes pratiques de [watcher-best-practices.md](#) pour le nommage, les règles ESLint/TypeScript, et les limites de fichiers.
 
 ## Structure Modulaire du Watcher
+
 La structure du Watcher doit être modulaire pour assurer la maintenabilité, la testabilité et l'évolutivité. Chaque secteur (détection, prévention, déclencheur) est organisé comme un module indépendant avec sa propre structure de fichiers, tout en permettant une interaction fluide entre eux. Cette approche respecte les bonnes pratiques de [watcher-best-practices.md](#) : un fichier par responsabilité, limites de taille (≤500 lignes), et organisation par secteur.
 
 ### Principes Généraux
+
 - **Modularité** : Chaque secteur est autonome, avec ses propres fichiers pour les fonctionnalités spécifiques.
 - **Indépendance** : Les secteurs peuvent être développés, testés et déployés indépendamment.
 - **Interaction** : Utilisation d'interfaces claires (ex. : événements ou APIs) pour la communication entre secteurs.
@@ -44,10 +51,13 @@ La structure du Watcher doit être modulaire pour assurer la maintenabilité, la
 - **Référence** : Inspiré des bonnes pratiques pour le choix de modules et les limites de fichiers.
 
 ### Secteurs Principaux et Leur Structure
+
 Le Watcher est divisé en trois secteurs principaux, chacun avec une structure dédiée.
 
 #### 1. Secteur Détection (Surveillance)
+
 Responsabilité : Détecter les changements en temps réel dans les fichiers surveillés.
+
 - **Point d'entrée** : `src/detection/index.ts` - Orchestre la surveillance et expose les APIs pour les autres secteurs.
 - **Fichiers composants** :
   - `src/detection/watcher.ts` : Initialise Chokidar et gère les événements de fichiers (ajout, modification, suppression).
@@ -57,7 +67,9 @@ Responsabilité : Détecter les changements en temps réel dans les fichiers sur
 - **Interaction** : Émet des événements vers le secteur Prévention et Déclencheur via un bus d'événements ou callbacks.
 
 #### 2. Secteur Prévention (Vérifications)
+
 Responsabilité : Exécuter des scripts de prévention pour valider les changements avant qu'ils ne causent des problèmes.
+
 - **Point d'entrée** : `src/prevention/index.ts` - Gère les vérifications et déclenche des actions préventives.
 - **Fichiers composants** :
   - `src/prevention/validators.ts` : Implémente les validations (ex. : linting avec ESLint, vérification de formats JSON/YAML).
@@ -67,7 +79,9 @@ Responsabilité : Exécuter des scripts de prévention pour valider les changeme
 - **Interaction** : Écoute les événements du secteur Détection et signale les problèmes au secteur Déclencheur si nécessaire.
 
 #### 3. Secteur Déclencheur (Correction)
+
 Responsabilité : Déclencher des corrections automatiques pour les erreurs détectées.
+
 - **Point d'entrée** : `src/trigger/index.ts` - Orchestre les corrections et gère les notifications.
 - **Fichiers composants** :
   - `src/trigger/correctors.ts` : Applique les corrections (ex. : formatage avec Prettier, restauration de configs).
@@ -77,7 +91,9 @@ Responsabilité : Déclencher des corrections automatiques pour les erreurs dét
 - **Interaction** : Reçoit les signaux des secteurs Détection et Prévention pour déclencher des actions.
 
 ### Structure de Dossiers Complète
+
 Voici un exemple de structure de dossiers pour le Watcher :
+
 ```
 watcher-service/
 ├── src/
@@ -115,33 +131,40 @@ watcher-service/
 ```
 
 ### Avantages de Cette Structure
+
 - **Maintenabilité** : Chaque secteur est isolé, facilitant les modifications sans impact global.
 - **Testabilité** : Tests unitaires par secteur avec Jest.
 - **Évolutivité** : Ajout de nouveaux secteurs (ex. : reporting) sans refactor majeur.
 - **Conformité** : Respecte les limites de fichiers (chaque fichier <500 lignes) et les bonnes pratiques de nommage.
 
 ## Gestion des Erreurs Courantes
+
 Le Watcher est conçu pour empêcher la répétition des mêmes erreurs en développement, en les détectant et corrigeant automatiquement en arrière-plan. Cela inclut des problèmes courants comme les variables inutilisées, les types non définis, les "any" excessifs, et les annotations inutiles. Cette fonctionnalité s'intègre dans les secteurs Détection, Prévention et Déclencheur, utilisant des outils comme ESLint et Prettier pour une correction immédiate sans intervention humaine.
 
 ### Erreurs Ciblées et Leur Correction Automatique
+
 Voici les erreurs courantes que le Watcher doit détecter et corriger automatiquement :
 
 - **Variables écrites mais non utilisées** (unused vars) :
+
   - **Détection** : ESLint règle `@typescript-eslint/no-unused-vars`.
   - **Correction** : Supprimer automatiquement les variables inutiles ou les marquer comme utilisées (ex. : préfixe `_` pour paramètres ignorés).
   - **Script** : Intégré dans `src/trigger/correctors.ts` pour nettoyer le code sans casser la logique.
 
 - **Types non définis** :
+
   - **Détection** : ESLint règle `@typescript-eslint/no-inferrable-types` ou vérifications personnalisées.
   - **Correction** : Ajouter des types explicites uniquement si nécessaire ; laisser TypeScript inférer quand possible.
   - **Script** : Utiliser un script pour analyser et ajouter des annotations minimales (ex. : `let x: number = 5;` devient `let x = 5;` si inférable).
 
 - **Utilisation de "any"** :
+
   - **Détection** : ESLint règle `@typescript-eslint/no-explicit-any`.
   - **Correction** : Remplacer `any` par des types spécifiques (ex. : `Record<string, unknown>` ou interfaces définies).
   - **Script** : Scanner et remplacer automatiquement les "any" par des alternatives typées sûres.
 
 - **Annotations inutiles** :
+
   - **Détection** : ESLint règle `@typescript-eslint/no-inferrable-types`.
   - **Correction** : Supprimer les annotations redondantes (ex. : pas besoin de typer une constante évidente).
   - **Script** : Nettoyer les fichiers pour garder le code concis.
@@ -152,24 +175,28 @@ Voici les erreurs courantes que le Watcher doit détecter et corriger automatiqu
   - **Variables non constantes** : Forcer `const` quand possible avec `prefer-const`.
 
 ### Intégration dans les Secteurs
+
 - **Secteur Détection** : Utilise Chokidar pour surveiller les fichiers et déclencher des scans ESLint à chaque changement.
 - **Secteur Prévention** : Valide le code avec ESLint avant les commits ou changements majeurs, bloquant les erreurs si nécessaire.
 - **Secteur Déclencheur** : Applique les corrections automatiques via scripts (ex. : `eslint --fix`) et restaure les fichiers sans interruption.
 - **Workflow** : Dès qu'une erreur est détectée (ex. : sauvegarde d'un fichier), le Watcher lance un script de correction en arrière-plan, notifie si l'erreur persiste, et logue l'action.
 
 ### Avantages
+
 - **Automatisation** : Évite les revues manuelles répétitives pour des erreurs simples.
 - **Éducation** : L'équipe apprend des corrections automatiques, réduisant les futures erreurs.
 - **Productivité** : Développement fluide sans blocages pour des problèmes triviaux.
 - **Référence** : S'aligne avec [watcher-best-practices.md - Règles ESLint et TypeScript](#) pour une qualité de code élevée.
 
 Cette gestion des erreurs sera implémentée dans les fichiers composants des secteurs, avec des tests pour garantir la sécurité des corrections.
+
 - **Vérifier les prérequis** : Assurer Node.js (v14+) et npm/yarn installés. Référence : [watcher-requirements.md - Besoins Techniques](#).
 - **Créer la structure de projet** : Copier le dossier Watcher dans le nouveau projet. Exclure automatiquement le dossier Watcher de la surveillance pour éviter les boucles.
 - **Lire les spécifications** : Consulter [watcher-specification.md](#) pour comprendre les objectifs et [watcher-capabilities.md](#) pour les idées étendues.
 - **Planifier les règles** : Définir les règles de fichiers et scripts de correction dans des fichiers de config (ex. : `rules.json`).
 
 ### Étape 2 : Installation des Dépendances
+
 - **Utiliser le package.json fourni** : Copier l'exemple de [watcher-dependencies.md](#) dans `package.json`.
   - Commande : `npm install` ou `yarn install`.
 - **Dépendances clés à installer** :
@@ -179,6 +206,7 @@ Cette gestion des erreurs sera implémentée dans les fichiers composants des se
 - **Conseil** : Utiliser `npm audit` pour vérifier les vulnérabilités et mettre à jour si nécessaire.
 
 ### Étape 3 : Configuration Initiale
+
 - **Fichier .env.local** : Créer ce fichier pour définir les variables (ex. : `WATCH_DIR=/path/to/project`, `SLACK_WEBHOOK_URL=...`).
   - Référence : [watcher-requirements.md - Variables d'environnement](#).
 - **Fichiers de configuration** :
@@ -189,6 +217,7 @@ Cette gestion des erreurs sera implémentée dans les fichiers composants des se
 - **Tests initiaux** : Écrire des tests avec Jest pour valider la configuration.
 
 ### Étape 4 : Développement et Intégration du Code
+
 - **Modules principaux** :
   - **Watcher.js** : Utiliser Chokidar pour surveiller les fichiers, exclure le dossier Watcher.
   - **Prevention.js** : Intégrer ESLint pour vérifications.
@@ -200,18 +229,21 @@ Cette gestion des erreurs sera implémentée dans les fichiers composants des se
 - **Référence** : S'inspirer de [watcher-capabilities.md - Systèmes de Déclenchement](#) pour les règles conditionnelles.
 
 ### Étape 5 : Tests et Validation
+
 - **Tests unitaires** : Avec Jest, tester chaque module (ex. : simulation de changements de fichiers).
 - **Tests d'intégration** : Vérifier le workflow complet dans un projet de test.
 - **Logs et monitoring** : Utiliser Winston pour tracer les actions (corrections appliquées, notifications envoyées).
 - **Référence** : [watcher-requirements.md - Besoins en Tests](#).
 
 ### Étape 6 : Lancement et Déploiement
+
 - **Lancement local** : `node index.js` ou via CLI.
 - **Portabilité** : Le Watcher peut être copié dans n'importe quel projet et configuré via `.env.local`.
 - **Monitoring continu** : Surveiller les logs pour ajuster les règles.
 - **Documentation** : Mettre à jour ce guide avec les leçons apprises.
 
 ## Conseils pour un Développement Méthodique
+
 - **Ordre des priorités** : Commencer par la surveillance de base, ajouter la prévention, puis la correction.
 - **Tests à chaque étape** : Éviter les régressions avec Jest.
 - **Réutilisabilité** : Garder le code modulaire pour faciliter les ajouts.

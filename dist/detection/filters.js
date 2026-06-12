@@ -1,6 +1,6 @@
-import fs from 'fs-extra';
-import { createChildLogger } from '../shared/logger.js';
-const logger = createChildLogger('detection-filters');
+import fs from "fs-extra";
+import { createChildLogger } from "../shared/logger.js";
+const logger = createChildLogger("detection-filters");
 /**
  * File filter class for applying various filtering rules to file events
  */
@@ -21,13 +21,15 @@ export class FileFilter {
             }
         }
         // Pattern filters
-        if (this.criteria.excludePatterns && this.criteria.excludePatterns.length > 0) {
+        if (this.criteria.excludePatterns &&
+            this.criteria.excludePatterns.length > 0) {
             const excludeFilter = this.filterByExcludePatterns(event);
             if (!excludeFilter.passed) {
                 return excludeFilter;
             }
         }
-        if (this.criteria.includePatterns && this.criteria.includePatterns.length > 0) {
+        if (this.criteria.includePatterns &&
+            this.criteria.includePatterns.length > 0) {
             const includeFilter = this.filterByIncludePatterns(event);
             if (!includeFilter.passed) {
                 return includeFilter;
@@ -47,7 +49,7 @@ export class FileFilter {
                 return timeFilter;
             }
         }
-        return { passed: true, metadata: { filters: 'all_passed' } };
+        return { passed: true, metadata: { filters: "all_passed" } };
     }
     /**
      * Filter by file extension
@@ -56,7 +58,7 @@ export class FileFilter {
         if (!this.criteria.extensions?.includes(event.extension)) {
             return {
                 passed: false,
-                reason: `Extension '${event.extension}' not in allowed list: ${this.criteria.extensions?.join(', ')}`,
+                reason: `Extension '${event.extension}' not in allowed list: ${this.criteria.extensions?.join(", ")}`,
             };
         }
         return { passed: true };
@@ -79,11 +81,11 @@ export class FileFilter {
      * Filter by include patterns
      */
     filterByIncludePatterns(event) {
-        const matchesAnyPattern = this.criteria.includePatterns.some(pattern => this.matchesPattern(event.relativePath, pattern));
+        const matchesAnyPattern = this.criteria.includePatterns.some((pattern) => this.matchesPattern(event.relativePath, pattern));
         if (!matchesAnyPattern) {
             return {
                 passed: false,
-                reason: `Path doesn't match any include pattern: ${this.criteria.includePatterns?.join(', ')}`,
+                reason: `Path doesn't match any include pattern: ${this.criteria.includePatterns?.join(", ")}`,
             };
         }
         return { passed: true };
@@ -115,7 +117,7 @@ export class FileFilter {
             logger.warn(`Could not get file size for ${event.filePath}:`, error);
             return {
                 passed: false,
-                reason: 'Could not determine file size',
+                reason: "Could not determine file size",
             };
         }
     }
@@ -141,7 +143,7 @@ export class FileFilter {
             logger.warn(`Could not get modification time for ${event.filePath}:`, error);
             return {
                 passed: false,
-                reason: 'Could not determine modification time',
+                reason: "Could not determine modification time",
             };
         }
     }
@@ -150,12 +152,12 @@ export class FileFilter {
      */
     matchesPattern(filePath, pattern) {
         // Simple pattern matching - can be extended for more complex patterns
-        if (pattern.includes('*') || pattern.includes('?')) {
+        if (pattern.includes("*") || pattern.includes("?")) {
             // Convert glob pattern to regex
             const regexPattern = pattern
-                .replace(/\./g, '\\.')
-                .replace(/\*/g, '.*')
-                .replace(/\?/g, '.');
+                .replace(/\./g, "\\.")
+                .replace(/\*/g, ".*")
+                .replace(/\?/g, ".");
             return new RegExp(`^${regexPattern}$`).test(filePath);
         }
         // Exact match
@@ -166,7 +168,7 @@ export class FileFilter {
      */
     updateCriteria(newCriteria) {
         this.criteria = { ...this.criteria, ...newCriteria };
-        logger.info('Filter criteria updated:', this.criteria);
+        logger.info("Filter criteria updated:", this.criteria);
     }
     /**
      * Get current filter criteria
@@ -183,23 +185,41 @@ export const FilterPresets = {
      * Default filter for TypeScript/JavaScript projects
      */
     jsTsProject: () => ({
-        extensions: ['js', 'ts', 'jsx', 'tsx', 'json', 'md'],
-        excludePatterns: ['node_modules/**', 'dist/**', 'build/**', '.git/**'],
+        extensions: ["js", "ts", "jsx", "tsx", "json", "md"],
+        excludePatterns: ["node_modules/**", "dist/**", "build/**", ".git/**"],
         maxFileSize: 1024 * 1024, // 1MB
     }),
     /**
      * Minimal filter for quick scanning
      */
     minimal: () => ({
-        extensions: ['js', 'ts'],
-        excludePatterns: ['node_modules/**'],
+        extensions: ["js", "ts"],
+        excludePatterns: ["node_modules/**"],
     }),
     /**
      * Comprehensive filter for full project analysis
      */
     comprehensive: () => ({
-        extensions: ['js', 'ts', 'jsx', 'tsx', 'json', 'md', 'css', 'scss', 'html', 'yaml', 'yml'],
-        excludePatterns: ['node_modules/**', 'dist/**', 'build/**', '.git/**', '*.log'],
+        extensions: [
+            "js",
+            "ts",
+            "jsx",
+            "tsx",
+            "json",
+            "md",
+            "css",
+            "scss",
+            "html",
+            "yaml",
+            "yml",
+        ],
+        excludePatterns: [
+            "node_modules/**",
+            "dist/**",
+            "build/**",
+            ".git/**",
+            "*.log",
+        ],
         maxFileSize: 5 * 1024 * 1024, // 5MB
         modifiedWithin: 24 * 60 * 60 * 1000, // Last 24 hours
     }),

@@ -1,61 +1,119 @@
 {
+  "enabled": true,
   "rules": [
     {
-      "id": "no-unused-vars",
+      "id": "eslint-validation",
+      "name": "ESLint Validation",
+      "description": "Valider le code JavaScript/TypeScript avec ESLint",
       "enabled": true,
       "severity": "error",
-      "extensions": ["js", "ts", "jsx", "tsx"],
-      "description": "Variables declared but never used should be removed or prefixed with underscore"
+      "category": "syntax",
+      "validators": ["eslint"],
+      "scripts": ["eslint-fix"],
+      "conditions": {
+        "fileExtensions": ["js", "ts", "jsx", "tsx"]
+      },
+      "actions": {
+        "autoFix": true,
+        "notifyOnFailure": true,
+        "blockCommit": true
+      }
     },
     {
-      "id": "no-console-logs",
+      "id": "prettier-formatting",
+      "name": "Prettier Formatting",
+      "description": "Formater le code avec Prettier",
       "enabled": true,
-      "severity": "warn",
-      "extensions": ["js", "ts", "jsx", "tsx"],
-      "description": "Replace console.log with Winston logger"
-    },
-    {
-      "id": "no-explicit-any",
-      "enabled": true,
-      "severity": "warn",
-      "extensions": ["ts", "tsx"],
-      "description": "Avoid using 'any' type, use specific types instead"
-    },
-    {
-      "id": "prefer-const",
-      "enabled": true,
-      "severity": "error",
-      "extensions": ["js", "ts", "jsx", "tsx"],
-      "description": "Use const instead of let when variable is never reassigned"
-    },
-    {
-      "id": "no-duplicate-imports",
-      "enabled": true,
-      "severity": "error",
-      "extensions": ["js", "ts", "jsx", "tsx"],
-      "description": "Merge duplicate imports from the same module"
+      "severity": "warning",
+      "category": "style",
+      "validators": [],
+      "scripts": ["prettier-format"],
+      "conditions": {
+        "fileExtensions": ["js", "ts", "jsx", "tsx", "json", "md"]
+      },
+      "actions": {
+        "autoFix": true,
+        "notifyOnFailure": false,
+        "blockCommit": false
+      }
     },
     {
       "id": "json-validation",
+      "name": "JSON Validation",
+      "description": "Valider la syntaxe des fichiers JSON",
       "enabled": true,
       "severity": "error",
-      "extensions": ["json"],
-      "description": "Validate JSON syntax"
+      "category": "syntax",
+      "validators": ["json"],
+      "scripts": [],
+      "conditions": {
+        "fileExtensions": ["json"]
+      },
+      "actions": {
+        "autoFix": false,
+        "notifyOnFailure": true,
+        "blockCommit": true
+      }
     },
     {
-      "id": "markdown-linting",
-      "enabled": false,
-      "severity": "warn",
-      "extensions": ["md"],
-      "description": "Check markdown formatting (disabled by default)"
+      "id": "typescript-checking",
+      "name": "TypeScript Type Checking",
+      "description": "Lancer le compilateur TypeScript pour la verification de types",
+      "enabled": true,
+      "severity": "error",
+      "category": "syntax",
+      "validators": [],
+      "scripts": ["typescript-check"],
+      "conditions": {
+        "fileExtensions": ["ts", "tsx"]
+      },
+      "actions": {
+        "autoFix": false,
+        "notifyOnFailure": true,
+        "blockCommit": true
+      }
+    },
+    {
+      "id": "security-audit",
+      "name": "Security Audit",
+      "description": "Verifier les vulnerabilites de securite dans les dependances",
+      "enabled": true,
+      "severity": "warning",
+      "category": "security",
+      "validators": [],
+      "scripts": ["security-audit"],
+      "conditions": {
+        "filePatterns": ["package.json"]
+      },
+      "actions": {
+        "autoFix": false,
+        "notifyOnFailure": true,
+        "blockCommit": false
+      }
+    },
+    {
+      "id": "dependency-check",
+      "name": "Dependency Check",
+      "description": "Verifier les dependances inutilisees",
+      "enabled": true,
+      "severity": "info",
+      "category": "performance",
+      "validators": [],
+      "scripts": ["dependency-check"],
+      "conditions": {
+        "filePatterns": ["package.json"]
+      },
+      "actions": {
+        "autoFix": false,
+        "notifyOnFailure": false,
+        "blockCommit": false
+      }
     }
   ],
-  "globalExclusions": [
-    "node_modules/**",
-    ".git/**",
-    "dist/**",
-    "build/**",
-    "*.min.js",
-    ".watcher/**"
-  ]
+  "globalSettings": {
+    "failOnError": true,
+    "failOnWarning": false,
+    "maxExecutionTime": 30000,
+    "parallelExecution": true
+  }
 }

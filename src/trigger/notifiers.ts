@@ -1,30 +1,29 @@
-import { WebClient } from '@slack/web-api';
-import nodemailer from 'nodemailer';
-import fs from 'fs-extra';
-import path from 'path';
-import { Utils } from '../shared/utils.js';
-import { createChildLogger } from '../shared/logger.js';
+import { WebClient } from "@slack/web-api";
+import nodemailer from "nodemailer";
+import fs from "fs-extra";
+import path from "path";
+import { createChildLogger } from "../shared/logger.js";
 
-const logger = createChildLogger('trigger-notifiers');
+const logger = createChildLogger("trigger-notifiers");
 
 /**
  * Notification level
  */
 export enum NotificationLevel {
-  INFO = 'info',
-  WARNING = 'warning',
-  ERROR = 'error',
-  SUCCESS = 'success',
+  INFO = "info",
+  WARNING = "warning",
+  ERROR = "error",
+  SUCCESS = "success",
 }
 
 /**
  * Notification channel
  */
 export enum NotificationChannel {
-  SLACK = 'slack',
-  EMAIL = 'email',
-  CONSOLE = 'console',
-  FILE = 'file',
+  SLACK = "slack",
+  EMAIL = "email",
+  CONSOLE = "console",
+  FILE = "file",
 }
 
 /**
@@ -98,9 +97,9 @@ export class SlackNotifier extends BaseNotifier {
   private defaultChannel: string;
 
   constructor(token?: string, channel?: string, enabled: boolean = true) {
-    super('slack', enabled);
+    super("slack", enabled);
     this.client = new WebClient(token || process.env.SLACK_TOKEN);
-    this.defaultChannel = channel || process.env.SLACK_CHANNEL || '#general';
+    this.defaultChannel = channel || process.env.SLACK_CHANNEL || "#general";
   }
 
   async send(data: NotificationData): Promise<NotificationResult> {
@@ -112,20 +111,19 @@ export class SlackNotifier extends BaseNotifier {
       logger.info(`Sending Slack notification: ${data.title}`);
 
       const emoji = this.getLevelEmoji(data.level);
-      const color = this.getLevelColor(data.level);
 
       const blocks: any[] = [
         {
-          type: 'header',
+          type: "header",
           text: {
-            type: 'plain_text',
+            type: "plain_text",
             text: `${emoji} ${data.title}`,
           },
         },
         {
-          type: 'section',
+          type: "section",
           text: {
-            type: 'mrkdwn',
+            type: "mrkdwn",
             text: data.message,
           },
         },
@@ -133,41 +131,41 @@ export class SlackNotifier extends BaseNotifier {
 
       // Add metadata if present
       if (data.metadata || data.file || data.error) {
-        const fields: Array<{ type: 'mrkdwn'; text: string }> = [];
+        const fields: Array<{ type: "mrkdwn"; text: string }> = [];
 
         if (data.file) {
           fields.push({
-            type: 'mrkdwn',
+            type: "mrkdwn",
             text: `*File:*\n${path.basename(data.file)}`,
           });
         }
 
         if (data.error) {
           fields.push({
-            type: 'mrkdwn',
+            type: "mrkdwn",
             text: `*Error:*\n${data.error.message}`,
           });
         }
 
         if (data.metadata) {
           fields.push({
-            type: 'mrkdwn',
+            type: "mrkdwn",
             text: `*Details:*\n${JSON.stringify(data.metadata, null, 2)}`,
           });
         }
 
         blocks.push({
-          type: 'section',
+          type: "section",
           fields,
         });
       }
 
       // Add timestamp
       blocks.push({
-        type: 'context',
+        type: "context",
         elements: [
           {
-            type: 'mrkdwn',
+            type: "mrkdwn",
             text: `Triggered at ${new Date().toISOString()}`,
           },
         ],
@@ -186,9 +184,8 @@ export class SlackNotifier extends BaseNotifier {
         channel: NotificationChannel.SLACK,
         messageId: result.ts,
       };
-
     } catch (error) {
-      logger.error('Failed to send Slack notification:', error);
+      logger.error("Failed to send Slack notification:", error);
       return {
         success: false,
         channel: NotificationChannel.SLACK,
@@ -200,28 +197,28 @@ export class SlackNotifier extends BaseNotifier {
   private getLevelEmoji(level: NotificationLevel): string {
     switch (level) {
       case NotificationLevel.ERROR:
-        return '❌';
+        return "❌";
       case NotificationLevel.WARNING:
-        return '⚠️';
+        return "⚠️";
       case NotificationLevel.SUCCESS:
-        return '✅';
+        return "✅";
       case NotificationLevel.INFO:
       default:
-        return 'ℹ️';
+        return "ℹ️";
     }
   }
 
   private getLevelColor(level: NotificationLevel): string {
     switch (level) {
       case NotificationLevel.ERROR:
-        return '#ff0000';
+        return "#ff0000";
       case NotificationLevel.WARNING:
-        return '#ffa500';
+        return "#ffa500";
       case NotificationLevel.SUCCESS:
-        return '#00ff00';
+        return "#00ff00";
       case NotificationLevel.INFO:
       default:
-        return '#0099ff';
+        return "#0099ff";
     }
   }
 }
@@ -246,11 +243,11 @@ export class EmailNotifier extends BaseNotifier {
     to?: string,
     enabled: boolean = true
   ) {
-    super('email', enabled);
+    super("email", enabled);
 
     const config = {
-      host: smtpConfig?.host || process.env.EMAIL_HOST || 'smtp.gmail.com',
-      port: smtpConfig?.port || parseInt(process.env.EMAIL_PORT || '587'),
+      host: smtpConfig?.host || process.env.EMAIL_HOST || "smtp.gmail.com",
+      port: smtpConfig?.port || parseInt(process.env.EMAIL_PORT || "587"),
       secure: smtpConfig?.secure || false,
       auth: {
         user: smtpConfig?.user || process.env.EMAIL_USER,
@@ -259,8 +256,8 @@ export class EmailNotifier extends BaseNotifier {
     };
 
     this.transporter = nodemailer.createTransport(config);
-    this.from = from || process.env.EMAIL_FROM || 'watcher@localhost';
-    this.to = to || process.env.EMAIL_TO || '';
+    this.from = from || process.env.EMAIL_FROM || "watcher@localhost";
+    this.to = to || process.env.EMAIL_TO || "";
   }
 
   async send(data: NotificationData): Promise<NotificationResult> {
@@ -290,9 +287,8 @@ export class EmailNotifier extends BaseNotifier {
         channel: NotificationChannel.EMAIL,
         messageId: result.messageId,
       };
-
     } catch (error) {
-      logger.error('Failed to send email notification:', error);
+      logger.error("Failed to send email notification:", error);
       return {
         success: false,
         channel: NotificationChannel.EMAIL,
@@ -303,15 +299,26 @@ export class EmailNotifier extends BaseNotifier {
 
   private formatHtml(data: NotificationData): string {
     const level = data.level.toUpperCase();
-    const fileInfo = data.file ? `<p><strong>File:</strong> ${path.basename(data.file)}</p>` : '';
-    const errorInfo = data.error ? `<p><strong>Error:</strong> ${data.error.message}</p>` : '';
-    const metadataInfo = data.metadata ?
-      `<p><strong>Details:</strong><pre>${JSON.stringify(data.metadata, null, 2)}</pre></p>` : '';
+    const fileInfo = data.file
+      ? `<p><strong>File:</strong> ${path.basename(data.file)}</p>`
+      : "";
+    const errorInfo = data.error
+      ? `<p><strong>Error:</strong> ${data.error.message}</p>`
+      : "";
+    const metadataInfo = data.metadata
+      ? `<p><strong>Details:</strong><pre>${JSON.stringify(
+          data.metadata,
+          null,
+          2
+        )}</pre></p>`
+      : "";
 
     return `
       <html>
         <body>
-          <h2 style="color: ${this.getLevelColor(data.level)};">[${level}] ${data.title}</h2>
+          <h2 style="color: ${this.getLevelColor(data.level)};">[${level}] ${
+      data.title
+    }</h2>
           <p>${data.message}</p>
           ${fileInfo}
           ${errorInfo}
@@ -347,14 +354,14 @@ export class EmailNotifier extends BaseNotifier {
   private getLevelColor(level: NotificationLevel): string {
     switch (level) {
       case NotificationLevel.ERROR:
-        return '#ff0000';
+        return "#ff0000";
       case NotificationLevel.WARNING:
-        return '#ffa500';
+        return "#ffa500";
       case NotificationLevel.SUCCESS:
-        return '#00ff00';
+        return "#00ff00";
       case NotificationLevel.INFO:
       default:
-        return '#0099ff';
+        return "#0099ff";
     }
   }
 }
@@ -364,7 +371,7 @@ export class EmailNotifier extends BaseNotifier {
  */
 export class ConsoleNotifier extends BaseNotifier {
   constructor(enabled: boolean = true) {
-    super('console', enabled);
+    super("console", enabled);
   }
 
   async send(data: NotificationData): Promise<NotificationResult> {
@@ -375,8 +382,8 @@ export class ConsoleNotifier extends BaseNotifier {
     try {
       const emoji = this.getLevelEmoji(data.level);
       const level = data.level.toUpperCase();
-      const fileInfo = data.file ? ` | File: ${path.basename(data.file)}` : '';
-      const errorInfo = data.error ? ` | Error: ${data.error.message}` : '';
+      const fileInfo = data.file ? ` | File: ${path.basename(data.file)}` : "";
+      const errorInfo = data.error ? ` | Error: ${data.error.message}` : "";
 
       const message = `${emoji} [${level}] ${data.title}: ${data.message}${fileInfo}${errorInfo}`;
 
@@ -400,9 +407,8 @@ export class ConsoleNotifier extends BaseNotifier {
         success: true,
         channel: NotificationChannel.CONSOLE,
       };
-
     } catch (error) {
-      logger.error('Failed to send console notification:', error);
+      logger.error("Failed to send console notification:", error);
       return {
         success: false,
         channel: NotificationChannel.CONSOLE,
@@ -414,14 +420,14 @@ export class ConsoleNotifier extends BaseNotifier {
   private getLevelEmoji(level: NotificationLevel): string {
     switch (level) {
       case NotificationLevel.ERROR:
-        return '❌';
+        return "❌";
       case NotificationLevel.WARNING:
-        return '⚠️';
+        return "⚠️";
       case NotificationLevel.SUCCESS:
-        return '✅';
+        return "✅";
       case NotificationLevel.INFO:
       default:
-        return 'ℹ️';
+        return "ℹ️";
     }
   }
 }
@@ -433,8 +439,9 @@ export class FileNotifier extends BaseNotifier {
   private logPath: string;
 
   constructor(logPath?: string, enabled: boolean = true) {
-    super('file', enabled);
-    this.logPath = logPath || path.join(process.cwd(), 'logs', 'notifications.log');
+    super("file", enabled);
+    this.logPath =
+      logPath || path.join(process.cwd(), "logs", "notifications.log");
   }
 
   async send(data: NotificationData): Promise<NotificationResult> {
@@ -456,7 +463,7 @@ export class FileNotifier extends BaseNotifier {
         metadata: data.metadata,
       };
 
-      const logLine = JSON.stringify(logEntry) + '\n';
+      const logLine = JSON.stringify(logEntry) + "\n";
       await fs.appendFile(this.logPath, logLine);
 
       logger.debug(`Notification logged to file: ${this.logPath}`);
@@ -465,9 +472,8 @@ export class FileNotifier extends BaseNotifier {
         success: true,
         channel: NotificationChannel.FILE,
       };
-
     } catch (error) {
-      logger.error('Failed to send file notification:', error);
+      logger.error("Failed to send file notification:", error);
       return {
         success: false,
         channel: NotificationChannel.FILE,
@@ -508,7 +514,10 @@ export class NotifierRegistry {
   /**
    * Send notification to a specific channel
    */
-  async sendToChannel(channel: NotificationChannel, data: NotificationData): Promise<NotificationResult> {
+  async sendToChannel(
+    channel: NotificationChannel,
+    data: NotificationData
+  ): Promise<NotificationResult> {
     const notifier = this.get(channel);
     if (!notifier) {
       return {
@@ -524,13 +533,16 @@ export class NotifierRegistry {
   /**
    * Send notification to multiple channels
    */
-  async sendToChannels(channels: NotificationChannel[], data: NotificationData): Promise<NotificationResult[]> {
+  async sendToChannels(
+    channels: NotificationChannel[],
+    data: NotificationData
+  ): Promise<NotificationResult[]> {
     const results = await Promise.allSettled(
-      channels.map(channel => this.sendToChannel(channel, data))
+      channels.map((channel) => this.sendToChannel(channel, data))
     );
 
     return results.map((result, index) => {
-      if (result.status === 'fulfilled') {
+      if (result.status === "fulfilled") {
         return result.value;
       } else {
         return {
@@ -622,23 +634,29 @@ export class NotificationUtils {
     metadata?: Record<string, any>
   ): NotificationData {
     const totalFiles = correctedFiles.length + failedFiles.length;
-    const successRate = totalFiles > 0 ? (correctedFiles.length / totalFiles * 100).toFixed(1) : '0';
+    const successRate =
+      totalFiles > 0
+        ? ((correctedFiles.length / totalFiles) * 100).toFixed(1)
+        : "0";
 
     let message = `Processed ${totalFiles} files. `;
     message += `Success rate: ${successRate}%. `;
 
     if (correctedFiles.length > 0) {
-      message += `Corrected: ${correctedFiles.join(', ')}. `;
+      message += `Corrected: ${correctedFiles.join(", ")}. `;
     }
 
     if (failedFiles.length > 0) {
-      message += `Failed: ${failedFiles.join(', ')}.`;
+      message += `Failed: ${failedFiles.join(", ")}.`;
     }
 
     return {
       title,
       message,
-      level: failedFiles.length > 0 ? NotificationLevel.WARNING : NotificationLevel.SUCCESS,
+      level:
+        failedFiles.length > 0
+          ? NotificationLevel.WARNING
+          : NotificationLevel.SUCCESS,
       channel: NotificationChannel.CONSOLE, // Default channel
       metadata: {
         ...metadata,

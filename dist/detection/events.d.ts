@@ -1,5 +1,5 @@
-import EventEmitter from 'events';
-import { FileEvent } from './filters.js';
+import EventEmitter from "events";
+import { FileEvent } from "./filters.js";
 /**
  * Custom event types for the detection module
  */
@@ -20,7 +20,7 @@ export declare enum DetectionEvent {
  */
 export interface FileDetectedEvent {
     file: FileEvent;
-    source: 'watcher' | 'scan';
+    source: "watcher" | "scan";
 }
 export interface ProcessingEvent {
     file: FileEvent;
@@ -56,7 +56,7 @@ export declare class DetectionEventBus extends EventEmitter {
     /**
      * Emit file detected event
      */
-    emitFileDetected(file: FileEvent, source?: 'watcher' | 'scan'): void;
+    emitFileDetected(file: FileEvent, source?: "watcher" | "scan"): void;
     /**
      * Emit file modified event
      */

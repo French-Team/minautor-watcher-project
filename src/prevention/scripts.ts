@@ -1,12 +1,8 @@
-import { exec, spawn } from 'child_process';
-import { promisify } from 'util';
-import fs from 'fs-extra';
-import path from 'path';
-import { Utils } from '../shared/utils.js';
-import { createChildLogger } from '../shared/logger.js';
+import { spawn } from "child_process";
+import { Utils } from "../shared/utils.js";
+import { createChildLogger } from "../shared/logger.js";
 
-const execAsync = promisify(exec);
-const logger = createChildLogger('prevention-scripts');
+const logger = createChildLogger("prevention-scripts");
 
 /**
  * Script execution result
@@ -62,7 +58,11 @@ export class ScriptRunner {
     }
 
     this.scripts.set(config.name, config);
-    logger.info(`Script registered: ${config.name} - ${config.description || config.command}`);
+    logger.info(
+      `Script registered: ${config.name} - ${
+        config.description || config.command
+      }`
+    );
   }
 
   /**
@@ -86,7 +86,10 @@ export class ScriptRunner {
   /**
    * Execute a script by name
    */
-  async executeScript(name: string, options?: ScriptExecutionOptions): Promise<ScriptResult> {
+  async executeScript(
+    name: string,
+    options?: ScriptExecutionOptions
+  ): Promise<ScriptResult> {
     const script = this.scripts.get(name);
     if (!script) {
       throw new Error(`Script not found: ${name}`);
@@ -99,7 +102,11 @@ export class ScriptRunner {
     try {
       logger.info(`Executing script: ${name}`);
 
-      const result = await this.executeCommand(script, options, abortController.signal);
+      const result = await this.executeCommand(
+        script,
+        options,
+        abortController.signal
+      );
 
       const executionTime = Date.now() - startTime;
       logger.info(`Script ${name} completed in ${executionTime}ms`);
@@ -112,20 +119,18 @@ export class ScriptRunner {
         executionTime,
         error: result.error,
       };
-
     } catch (error) {
       const executionTime = Date.now() - startTime;
       logger.error(`Script ${name} failed after ${executionTime}ms:`, error);
 
       return {
         success: false,
-        stdout: '',
+        stdout: "",
         stderr: error instanceof Error ? error.message : String(error),
         exitCode: -1,
         executionTime,
         error: error instanceof Error ? error : new Error(String(error)),
       };
-
     } finally {
       this.runningScripts.delete(name);
     }
@@ -149,20 +154,25 @@ export class ScriptRunner {
       return [];
     }
 
-    logger.info(`Executing ${applicableScripts.length} scripts for file: ${filePath}`);
+    logger.info(
+      `Executing ${applicableScripts.length} scripts for file: ${filePath}`
+    );
 
     const results = await Promise.allSettled(
-      applicableScripts.map(script => this.executeScript(script.name))
+      applicableScripts.map((script) => this.executeScript(script.name))
     );
 
     return results.map((result, index) => {
-      if (result.status === 'fulfilled') {
+      if (result.status === "fulfilled") {
         return result.value;
       } else {
-        logger.error(`Script ${applicableScripts[index].name} failed:`, result.reason);
+        logger.error(
+          `Script ${applicableScripts[index].name} failed:`,
+          result.reason
+        );
         return {
           success: false,
-          stdout: '',
+          stdout: "",
           stderr: result.reason.message,
           exitCode: -1,
           executionTime: 0,
@@ -209,8 +219,8 @@ export class ScriptRunner {
       return true; // No specific triggers, execute for all files
     }
 
-    return script.triggers.some(trigger => {
-      if (trigger.startsWith('.')) {
+    return script.triggers.some((trigger) => {
+      if (trigger.startsWith(".")) {
         // Extension trigger
         return trigger === `.${extension}`;
       } else {
@@ -234,24 +244,24 @@ export class ScriptRunner {
       const cwd = options?.cwd || script.cwd || process.cwd();
       const env = { ...process.env, ...script.env, ...options?.env };
 
-      logger.debug(`Executing command: ${command} ${args.join(' ')} in ${cwd}`);
+      logger.debug(`Executing command: ${command} ${args.join(" ")} in ${cwd}`);
 
       const child = spawn(command, args, {
         cwd,
         env,
-        stdio: options?.captureOutput ? 'pipe' : 'inherit',
+        stdio: options?.captureOutput ? "pipe" : "inherit",
         signal,
       });
 
-      let stdout = '';
-      let stderr = '';
+      let stdout = "";
+      let stderr = "";
 
       if (options?.captureOutput && child.stdout && child.stderr) {
-        child.stdout.on('data', (data) => {
+        child.stdout.on("data", (data) => {
           stdout += data.toString();
         });
 
-        child.stderr.on('data', (data) => {
+        child.stderr.on("data", (data) => {
           stderr += data.toString();
         });
       }
@@ -259,10 +269,10 @@ export class ScriptRunner {
       const timeout = options?.timeout || script.timeout || 30000;
 
       const timer = setTimeout(() => {
-        child.kill('SIGTERM');
+        child.kill("SIGTERM");
         setTimeout(() => {
           if (!child.killed) {
-            child.kill('SIGKILL');
+            child.kill("SIGKILL");
           }
         }, 5000);
 
@@ -276,7 +286,7 @@ export class ScriptRunner {
         });
       }, timeout);
 
-      child.on('close', (code, signal) => {
+      child.on("close", (code, _signal) => {
         clearTimeout(timer);
 
         resolve({
@@ -288,7 +298,7 @@ export class ScriptRunner {
         });
       });
 
-      child.on('error', (error) => {
+      child.on("error", (error) => {
         clearTimeout(timer);
 
         resolve({
@@ -302,9 +312,9 @@ export class ScriptRunner {
       });
 
       // Handle abort signal
-      signal?.addEventListener('abort', () => {
+      signal?.addEventListener("abort", () => {
         clearTimeout(timer);
-        child.kill('SIGTERM');
+        child.kill("SIGTERM");
 
         resolve({
           success: false,
@@ -312,7 +322,7 @@ export class ScriptRunner {
           stderr: `${stderr}\nScript was aborted`,
           exitCode: -1,
           executionTime: 0,
-          error: new Error('Script was aborted'),
+          error: new Error("Script was aborted"),
         });
       });
     });
@@ -327,11 +337,11 @@ export const PredefinedScripts = {
    * ESLint with auto-fix
    */
   eslintFix: (config?: Partial<ScriptConfig>): ScriptConfig => ({
-    name: 'eslint-fix',
-    command: 'npx',
-    args: ['eslint', '--fix', '.'],
+    name: "eslint-fix",
+    command: "npx",
+    args: ["eslint", "--fix", "."],
     enabled: true,
-    description: 'Run ESLint with auto-fix on the project',
+    description: "Run ESLint with auto-fix on the project",
     timeout: 60000,
     ...config,
   }),
@@ -340,13 +350,13 @@ export const PredefinedScripts = {
    * Prettier formatting
    */
   prettierFormat: (config?: Partial<ScriptConfig>): ScriptConfig => ({
-    name: 'prettier-format',
-    command: 'npx',
-    args: ['prettier', '--write', '.'],
+    name: "prettier-format",
+    command: "npx",
+    args: ["prettier", "--write", "."],
     enabled: true,
-    description: 'Format code with Prettier',
+    description: "Format code with Prettier",
     timeout: 30000,
-    triggers: ['.js', '.ts', '.jsx', '.tsx', '.json', '.md'],
+    triggers: [".js", ".ts", ".jsx", ".tsx", ".json", ".md"],
     ...config,
   }),
 
@@ -354,13 +364,13 @@ export const PredefinedScripts = {
    * TypeScript type checking
    */
   typescriptCheck: (config?: Partial<ScriptConfig>): ScriptConfig => ({
-    name: 'typescript-check',
-    command: 'npx',
-    args: ['tsc', '--noEmit'],
+    name: "typescript-check",
+    command: "npx",
+    args: ["tsc", "--noEmit"],
     enabled: true,
-    description: 'Run TypeScript type checking',
+    description: "Run TypeScript type checking",
     timeout: 30000,
-    triggers: ['.ts', '.tsx'],
+    triggers: [".ts", ".tsx"],
     ...config,
   }),
 
@@ -368,11 +378,11 @@ export const PredefinedScripts = {
    * Security audit
    */
   securityAudit: (config?: Partial<ScriptConfig>): ScriptConfig => ({
-    name: 'security-audit',
-    command: 'npm',
-    args: ['audit'],
+    name: "security-audit",
+    command: "npm",
+    args: ["audit"],
     enabled: true,
-    description: 'Run npm security audit',
+    description: "Run npm security audit",
     timeout: 60000,
     ...config,
   }),
@@ -381,11 +391,11 @@ export const PredefinedScripts = {
    * Dependency vulnerability check
    */
   dependencyCheck: (config?: Partial<ScriptConfig>): ScriptConfig => ({
-    name: 'dependency-check',
-    command: 'npx',
-    args: ['depcheck'],
+    name: "dependency-check",
+    command: "npx",
+    args: ["depcheck"],
     enabled: true,
-    description: 'Check for unused dependencies',
+    description: "Check for unused dependencies",
     timeout: 30000,
     ...config,
   }),

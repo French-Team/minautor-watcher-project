@@ -7,7 +7,7 @@ export interface CorrectionResult {
     originalContent?: string;
     correctedContent?: string;
     changes: Array<{
-        type: 'insert' | 'delete' | 'replace';
+        type: "insert" | "delete" | "replace";
         line: number;
         column: number;
         oldText?: string;
@@ -33,7 +33,7 @@ export interface CorrectionRule {
         contentPatterns?: string[];
     };
     actions: Array<{
-        type: 'replace' | 'insert' | 'delete' | 'run-command' | 'eslint-fix' | 'prettier-format';
+        type: "replace" | "insert" | "delete" | "run-command" | "eslint-fix" | "prettier-format";
         target: string;
         content?: string;
         newContent?: string;

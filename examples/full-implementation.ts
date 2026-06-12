@@ -2,25 +2,25 @@
 // Ce fichier illustre une intégration basique des secteurs pour une exécution directe.
 // Utilisez-le comme base pour votre implémentation.
 
-import chokidar from 'chokidar';
-import { ESLint } from 'eslint';
-import { EventEmitter } from 'events';
-import * as dotenv from 'dotenv';
-import * as winston from 'winston';
+import chokidar from "chokidar";
+import { ESLint } from "eslint";
+import { EventEmitter } from "events";
+import * as dotenv from "dotenv";
+import * as winston from "winston";
 
 // Charger les variables d'environnement
 dotenv.config();
 
 // Logger avec Winston
 const logger = winston.createLogger({
-  level: 'info',
+  level: "info",
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.json()
   ),
   transports: [
     new winston.transports.Console(),
-    new winston.transports.File({ filename: 'watcher.log' }),
+    new winston.transports.File({ filename: "watcher.log" }),
   ],
 });
 
@@ -38,9 +38,9 @@ class DetectionSector extends EventEmitter {
       persistent: true,
     });
 
-    this.watcher.on('change', (path) => {
+    this.watcher.on("change", (path) => {
       logger.info(`Fichier changé : ${path}`);
-      this.emit('fileChanged', path);
+      this.emit("fileChanged", path);
     });
   }
 
@@ -60,10 +60,12 @@ class PreventionSector {
   async validate(filePath: string): Promise<boolean> {
     try {
       const results = await this.eslint.lintFiles([filePath]);
-      const hasErrors = results.some(r => r.errorCount > 0);
+      const hasErrors = results.some((r) => r.errorCount > 0);
       if (hasErrors) {
         logger.warn(`Erreurs détectées dans ${filePath}`);
-        results.forEach(r => r.messages.forEach(m => logger.error(m.message)));
+        results.forEach((r) =>
+          r.messages.forEach((m) => logger.error(m.message))
+        );
       }
       return !hasErrors;
     } catch (error) {
@@ -99,13 +101,13 @@ class Watcher {
   private trigger: TriggerSector;
 
   constructor() {
-    const watchDir = process.env.WATCH_DIR || './project';
+    const watchDir = process.env.WATCH_DIR || "./project";
     this.detection = new DetectionSector(watchDir);
     this.prevention = new PreventionSector();
     this.trigger = new TriggerSector();
 
     // Lier les secteurs
-    this.detection.on('fileChanged', async (path) => {
+    this.detection.on("fileChanged", async (path) => {
       const isValid = await this.prevention.validate(path);
       if (!isValid) {
         await this.trigger.correct(path);
@@ -114,13 +116,13 @@ class Watcher {
   }
 
   start() {
-    logger.info('Démarrage du Watcher...');
+    logger.info("Démarrage du Watcher...");
     this.detection.start();
   }
 
   stop() {
     this.detection.stop();
-    logger.info('Watcher arrêté.');
+    logger.info("Watcher arrêté.");
   }
 }
 
@@ -130,8 +132,8 @@ if (require.main === module) {
   watcher.start();
 
   // Gestion des signaux pour arrêt propre
-  process.on('SIGINT', () => watcher.stop());
-  process.on('SIGTERM', () => watcher.stop());
+  process.on("SIGINT", () => watcher.stop());
+  process.on("SIGTERM", () => watcher.stop());
 }
 
 export { Watcher, DetectionSector, PreventionSector, TriggerSector };

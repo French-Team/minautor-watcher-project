@@ -1,8 +1,8 @@
-import fs from 'fs-extra';
-import path from 'path';
-import { glob } from 'glob';
-import Joi from 'joi';
-import logger from './logger.js';
+import fs from "fs-extra";
+import path from "path";
+import { glob } from "glob";
+import Joi from "joi";
+import logger from "./logger.js";
 /**
  * Utility class for common file and system operations
  */
@@ -29,7 +29,7 @@ export class Utils {
                 logger.warn(`File not found: ${filePath}`);
                 return null;
             }
-            const content = await fs.readFile(filePath, 'utf-8');
+            const content = await fs.readFile(filePath, "utf-8");
             return JSON.parse(content);
         }
         catch (error) {
@@ -83,12 +83,12 @@ export class Utils {
      */
     static shouldExcludePath(filePath, excludePatterns) {
         const relativePath = path.relative(process.cwd(), filePath);
-        return excludePatterns.some(pattern => {
+        return excludePatterns.some((pattern) => {
             // Support for wildcards and simple patterns
             const regexPattern = pattern
-                .replace(/\./g, '\\.')
-                .replace(/\*/g, '.*')
-                .replace(/\?/g, '.');
+                .replace(/\./g, "\\.")
+                .replace(/\*/g, ".*")
+                .replace(/\?/g, ".");
             return new RegExp(`^${regexPattern}`).test(relativePath);
         });
     }
@@ -108,7 +108,7 @@ export class Utils {
      * Sleep utility for delays
      */
     static sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
+        return new Promise((resolve) => setTimeout(resolve, ms));
     }
     /**
      * Validate configuration object against schema
@@ -116,7 +116,7 @@ export class Utils {
     static validateConfig(config, schema) {
         const { error, value } = schema.validate(config, { allowUnknown: true });
         if (error) {
-            logger.error('Configuration validation error:', error.details);
+            logger.error("Configuration validation error:", error.details);
             throw new Error(`Invalid configuration: ${error.details[0].message}`);
         }
         return value;
@@ -129,21 +129,23 @@ export const ConfigSchemas = {
     watcherConfig: Joi.object({
         watchDir: Joi.string().required(),
         excludedDirs: Joi.array().items(Joi.string()).default([]),
-        watchExtensions: Joi.array().items(Joi.string()).default(['js', 'ts', 'jsx', 'tsx']),
+        watchExtensions: Joi.array()
+            .items(Joi.string())
+            .default(["js", "ts", "jsx", "tsx"]),
         processingDelay: Joi.number().default(100),
     }),
     preventionRules: Joi.object({
         rules: Joi.array().items(Joi.object({
             id: Joi.string().required(),
             enabled: Joi.boolean().default(true),
-            severity: Joi.string().valid('error', 'warn').default('error'),
+            severity: Joi.string().valid("error", "warn").default("error"),
             extensions: Joi.array().items(Joi.string()),
         })),
     }),
     triggerRules: Joi.object({
         autoCorrect: Joi.object({
             enabled: Joi.boolean().default(true),
-            maxFileSize: Joi.string().default('1MB'),
+            maxFileSize: Joi.string().default("1MB"),
             timeout: Joi.number().default(30000),
         }),
         corrections: Joi.array().items(Joi.object({

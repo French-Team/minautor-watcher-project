@@ -1,8 +1,8 @@
 // Exemple : src/detection/watcher.ts
 // Surveillance de fichiers avec Chokidar
 
-import chokidar from 'chokidar';
-import { EventEmitter } from 'events';
+import chokidar from "chokidar";
+import { EventEmitter } from "events";
 
 export class FileWatcher extends EventEmitter {
   private watcher: chokidar.FSWatcher;
@@ -17,9 +17,9 @@ export class FileWatcher extends EventEmitter {
       persistent: true,
     });
 
-    this.watcher.on('add', (path) => this.emit('fileAdded', path));
-    this.watcher.on('change', (path) => this.emit('fileChanged', path));
-    this.watcher.on('unlink', (path) => this.emit('fileDeleted', path));
+    this.watcher.on("add", (path) => this.emit("fileAdded", path));
+    this.watcher.on("change", (path) => this.emit("fileChanged", path));
+    this.watcher.on("unlink", (path) => this.emit("fileDeleted", path));
   }
 
   stop() {
@@ -28,6 +28,6 @@ export class FileWatcher extends EventEmitter {
 }
 
 // Utilisation dans index.ts :
-const watcher = new FileWatcher('./project');
-watcher.on('fileChanged', (path) => console.log(`Fichier changé : ${path}`));
+const watcher = new FileWatcher("./project");
+watcher.on("fileChanged", (path) => `Fichier changé : ${path}`));
 watcher.start();

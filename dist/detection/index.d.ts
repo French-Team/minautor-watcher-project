@@ -1,4 +1,4 @@
-import { DetectionEventBus } from './events.js';
+import { DetectionEventBus } from "./events.js";
 /**
  * Configuration for the detection module
  */
@@ -7,7 +7,7 @@ export interface DetectionConfig {
     excludedDirs: string[];
     watchExtensions: string[];
     processingDelay: number;
-    filterPreset?: 'jsTsProject' | 'minimal' | 'comprehensive';
+    filterPreset?: "jsTsProject" | "minimal" | "comprehensive";
     customFilters?: any;
 }
 /**

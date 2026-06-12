@@ -1,6 +1,6 @@
-import EventEmitter from 'events';
-import { createChildLogger } from '../shared/logger.js';
-const logger = createChildLogger('detection-events');
+import EventEmitter from "events";
+import { createChildLogger } from "../shared/logger.js";
+const logger = createChildLogger("detection-events");
 /**
  * Custom event types for the detection module
  */
@@ -33,7 +33,7 @@ export class DetectionEventBus extends EventEmitter {
     /**
      * Emit file detected event
      */
-    emitFileDetected(file, source = 'watcher') {
+    emitFileDetected(file, source = "watcher") {
         const event = { file, source };
         logger.debug(`Emitting FILE_DETECTED: ${file.filePath}`);
         this.emit(DetectionEvent.FILE_DETECTED, event);
@@ -150,7 +150,7 @@ export class DetectionEventBus extends EventEmitter {
     emitValidationError(error, file) {
         const event = {
             error,
-            context: 'validation',
+            context: "validation",
             file,
             timestamp: new Date(),
         };
@@ -181,10 +181,10 @@ export class EventUtils {
                 await handler(data);
             }
             catch (error) {
-                logger.error('Error in async event handler:', error);
+                logger.error("Error in async event handler:", error);
                 // Re-emit as detection error if possible
                 if (eventBus.listenerCount(DetectionEvent.DETECTION_ERROR) > 0) {
-                    eventBus.emitDetectionError(error instanceof Error ? error : new Error(String(error)), 'event_handler');
+                    eventBus.emitDetectionError(error instanceof Error ? error : new Error(String(error)), "event_handler");
                 }
             }
         };

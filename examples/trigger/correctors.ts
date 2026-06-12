@@ -1,7 +1,7 @@
 // Exemple : src/trigger/correctors.ts
 // Corrections automatiques avec ESLint
 
-import { ESLint } from 'eslint';
+import { ESLint } from "eslint";
 
 export class CodeCorrector {
   private eslint: ESLint;
@@ -14,10 +14,10 @@ export class CodeCorrector {
 
   async correct(filePath: string): Promise<void> {
     await this.eslint.lintFiles([filePath]);
-    console.log(`Corrections appliquées à ${filePath}`);
+    `Corrections appliquées à ${filePath}`);
   }
 }
 
 // Utilisation :
 const corrector = new CodeCorrector();
-await corrector.correct('./project/file.ts');
+await corrector.correct("./project/file.ts");

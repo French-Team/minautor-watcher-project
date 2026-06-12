@@ -16,7 +16,7 @@ export interface ValidationError {
     file: string;
     line?: number;
     column?: number;
-    severity: 'error' | 'warning';
+    severity: "error" | "warning";
     code?: string;
 }
 /**
@@ -28,7 +28,7 @@ export interface ValidationWarning {
     file: string;
     line?: number;
     column?: number;
-    severity?: 'error' | 'warning';
+    severity?: "error" | "warning";
     suggestion?: string;
 }
 /**
@@ -41,7 +41,7 @@ export interface ValidatorConfig {
         name: string;
         pattern: RegExp;
         message: string;
-        severity: 'error' | 'warning';
+        severity: "error" | "warning";
     }>;
 }
 /**

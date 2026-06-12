@@ -1,4 +1,4 @@
-import { TriggerContext, TriggerResult } from './rules.js';
+import { TriggerContext, TriggerResult } from "./rules.js";
 /**
  * Trigger module configuration
  */
@@ -68,10 +68,6 @@ export declare class TriggerModule {
      * Send error notification
      */
     private sendErrorNotification;
-    /**
-     * Set up graceful shutdown handlers
-     */
-    private setupGracefulShutdown;
     /**
      * Get current status
      */

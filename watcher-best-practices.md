@@ -1,9 +1,11 @@
 # Bonnes Pratiques et Problèmes Récurrents pour le Développement du Watcher
 
 ## Introduction
+
 Ce document liste les problèmes récurrents à prendre en compte en permanence lors du développement du Watcher. En intégrant ces bonnes pratiques, nous assurons la maintenabilité, la lisibilité et la qualité du code. Ces règles sont essentielles pour éviter les pièges courants en développement Node.js/TypeScript et promouvoir une architecture propre. Elles complètent les documents existants (spécifications, exigences, capacités, dépendances) en fournissant des guidelines concrets.
 
 ## 1. Conventions de Nommage
+
 Le nommage cohérent est crucial pour la lisibilité et la collaboration. Des noms mal choisis entraînent confusion, erreurs et difficultés de maintenance.
 
 - **Dossiers** : Utiliser des noms en kebab-case (ex. : `src/`, `tests/`, `config/`). Éviter les espaces ou caractères spéciaux.
@@ -19,6 +21,7 @@ Le nommage cohérent est crucial pour la lisibilité et la collaboration. Des no
   - Référence : Appliquer dans tout le projet pour une navigation intuitive.
 
 ## 2. Règles de Base ESLint et TypeScript
+
 Ces règles empêchent les erreurs courantes et améliorent la qualité du code. Configurer ESLint pour les appliquer automatiquement.
 
 - **@typescript-eslint/no-explicit-any** : Interdire l'utilisation de `any` pour forcer le typage strict. Remplacez par des types spécifiques (ex. : `Record<string, unknown>` au lieu de `any`).
@@ -32,6 +35,7 @@ Ces règles empêchent les erreurs courantes et améliorent la qualité du code.
 - **Configuration** : Étendre `eslint:recommended` et `@typescript-eslint/recommended` dans `eslint.config.js`. Intégrer avec Prettier pour éviter les conflits.
 
 ## 3. Choix des Modules dans le Projet
+
 Le choix et l'organisation des modules impactent la modularité et la réutilisabilité. Sélectionner des modules open source fiables et organiser pour une séparation claire.
 
 - **Sélection de modules** :
@@ -49,6 +53,7 @@ Le choix et l'organisation des modules impactent la modularité et la réutilisa
   - Éviter les modules globaux ; préférer les imports locaux.
 
 ## 4. Limites de Taille des Fichiers et Responsabilités
+
 Maintenir des fichiers petits améliore la lisibilité et la maintenabilité. Appliquer des règles strictes pour éviter les fichiers monstrueux.
 
 - **Limite de taille** : Aucun fichier ne doit dépasser 500 lignes. Idéalement, viser 200-300 lignes.
@@ -66,6 +71,7 @@ Maintenir des fichiers petits améliore la lisibilité et la maintenabilité. Ap
   - Encourager les pull requests avec des fichiers modulaires.
 
 ## Intégration avec les Autres Documents
+
 - **Liens avec watcher-specification.md** : Ces pratiques assurent que le Watcher reste portable et maintenable.
 - **Liens avec watcher-requirements.md** : Respectent les besoins techniques et de sécurité.
 - **Liens avec watcher-capabilities.md** : Supportent les fonctionnalités étendues sans complexité.
@@ -73,6 +79,7 @@ Maintenir des fichiers petits améliore la lisibilité et la maintenabilité. Ap
 - **Liens avec watcher-setup-guide.md** : Appliquer lors de l'installation et du développement.
 
 ## Conclusion
+
 En intégrant ces bonnes pratiques, nous évitons les problèmes récurrents comme le code illisible, les erreurs de typage, les modules mal organisés et les fichiers surchargés. Elles doivent être vérifiées à chaque commit ou revue de code. Pour des mises à jour, consulter ce document et les références croisées.
 
-*Réviser régulièrement pour s'adapter à l'évolution du projet.*
+_Réviser régulièrement pour s'adapter à l'évolution du projet._

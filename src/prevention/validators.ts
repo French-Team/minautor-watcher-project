@@ -1,12 +1,11 @@
-import fs from 'fs-extra';
-import path from 'path';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { Utils } from '../shared/utils.js';
-import { createChildLogger } from '../shared/logger.js';
+import fs from "fs-extra";
+import { exec } from "child_process";
+import { promisify } from "util";
+import { Utils } from "../shared/utils.js";
+import { createChildLogger } from "../shared/logger.js";
 
 const execAsync = promisify(exec);
-const logger = createChildLogger('prevention-validators');
+const logger = createChildLogger("prevention-validators");
 
 /**
  * Validation result interface
@@ -27,7 +26,7 @@ export interface ValidationError {
   file: string;
   line?: number;
   column?: number;
-  severity: 'error' | 'warning';
+  severity: "error" | "warning";
   code?: string;
 }
 
@@ -40,7 +39,7 @@ export interface ValidationWarning {
   file: string;
   line?: number;
   column?: number;
-  severity?: 'error' | 'warning';
+  severity?: "error" | "warning";
   suggestion?: string;
 }
 
@@ -54,7 +53,7 @@ export interface ValidatorConfig {
     name: string;
     pattern: RegExp;
     message: string;
-    severity: 'error' | 'warning';
+    severity: "error" | "warning";
   }>;
 }
 
@@ -102,7 +101,7 @@ export abstract class BaseValidator {
  */
 export class ESLintValidator extends BaseValidator {
   constructor(config: ValidatorConfig) {
-    super('eslint', config);
+    super("eslint", config);
   }
 
   async validate(filePath: string): Promise<ValidationResult> {
@@ -121,7 +120,9 @@ export class ESLintValidator extends BaseValidator {
       await this.checkESLintAvailability();
 
       // Run ESLint on the file
-      const { stdout, stderr } = await execAsync(`npx eslint "${filePath}" --format=json`);
+      const { stdout, stderr } = await execAsync(
+        `npx eslint "${filePath}" --format=json`
+      );
 
       if (stderr) {
         logger.warn(`ESLint stderr for ${filePath}:`, stderr);
@@ -133,12 +134,12 @@ export class ESLintValidator extends BaseValidator {
       for (const fileResult of eslintResults) {
         for (const message of fileResult.messages) {
           const validationMessage: ValidationError = {
-            rule: message.ruleId || 'unknown',
+            rule: message.ruleId || "unknown",
             message: message.message,
             file: filePath,
             line: message.line,
             column: message.column,
-            severity: message.severity === 2 ? 'error' : 'warning',
+            severity: message.severity === 2 ? "error" : "warning",
             code: this.getCodeSnippet(filePath, message.line),
           };
 
@@ -158,24 +159,25 @@ export class ESLintValidator extends BaseValidator {
         }
       }
 
-      logger.debug(`ESLint validation completed for ${filePath}: ${result.errors.length} errors, ${result.warnings.length} warnings`);
-
+      logger.debug(
+        `ESLint validation completed for ${filePath}: ${result.errors.length} errors, ${result.warnings.length} warnings`
+      );
     } catch (error: any) {
-      if (error.code === 'ENOENT') {
-        logger.warn('ESLint not found, skipping validation');
+      if (error.code === "ENOENT") {
+        logger.warn("ESLint not found, skipping validation");
         result.warnings.push({
-          rule: 'eslint-not-found',
-          message: 'ESLint is not installed or not in PATH',
+          rule: "eslint-not-found",
+          message: "ESLint is not installed or not in PATH",
           file: filePath,
-          suggestion: 'Install ESLint: npm install -g eslint',
+          suggestion: "Install ESLint: npm install -g eslint",
         });
       } else {
         logger.error(`ESLint validation failed for ${filePath}:`, error);
         result.errors.push({
-          rule: 'eslint-error',
+          rule: "eslint-error",
           message: `ESLint execution failed: ${error.message}`,
           file: filePath,
-          severity: 'error',
+          severity: "error",
         });
         result.isValid = false;
       }
@@ -186,18 +188,23 @@ export class ESLintValidator extends BaseValidator {
 
   private async checkESLintAvailability(): Promise<void> {
     try {
-      await execAsync('npx eslint --version');
+      await execAsync("npx eslint --version");
     } catch (error) {
-      throw new Error('ESLint is not available. Please install it: npm install -g eslint');
+      throw new Error(
+        "ESLint is not available. Please install it: npm install -g eslint"
+      );
     }
   }
 
-  private getCodeSnippet(filePath: string, lineNumber?: number): string | undefined {
+  private getCodeSnippet(
+    filePath: string,
+    lineNumber?: number
+  ): string | undefined {
     if (!lineNumber) return undefined;
 
     try {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      const lines = content.split('\n');
+      const content = fs.readFileSync(filePath, "utf-8");
+      const lines = content.split("\n");
 
       if (lineNumber <= lines.length) {
         return lines[lineNumber - 1].trim();
@@ -215,7 +222,7 @@ export class ESLintValidator extends BaseValidator {
  */
 export class JSONValidator extends BaseValidator {
   constructor(config: ValidatorConfig) {
-    super('json', config);
+    super("json", config);
   }
 
   async validate(filePath: string): Promise<ValidationResult> {
@@ -230,20 +237,19 @@ export class JSONValidator extends BaseValidator {
     }
 
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
+      const content = await fs.readFile(filePath, "utf-8");
 
       // Basic JSON syntax validation
       JSON.parse(content);
 
       logger.debug(`JSON validation passed for ${filePath}`);
-
     } catch (error: any) {
       result.isValid = false;
       result.errors.push({
-        rule: 'json-syntax',
+        rule: "json-syntax",
         message: `Invalid JSON: ${error.message}`,
         file: filePath,
-        severity: 'error',
+        severity: "error",
       });
     }
 
@@ -256,7 +262,7 @@ export class JSONValidator extends BaseValidator {
  */
 export class YAMLValidator extends BaseValidator {
   constructor(config: ValidatorConfig) {
-    super('yaml', config);
+    super("yaml", config);
   }
 
   async validate(filePath: string): Promise<ValidationResult> {
@@ -272,29 +278,28 @@ export class YAMLValidator extends BaseValidator {
 
     try {
       // Check if yaml package is available
-      // @ts-ignore - yaml is optional, handled gracefully at runtime
-      const yaml: any = await import('yaml').catch(() => null);
+      // @ts-expect-error - yaml is optional, handled gracefully at runtime
+      const yaml: any = await import("yaml").catch(() => null);
 
       if (!yaml) {
-        logger.debug('YAML package not available, skipping YAML validation');
+        logger.debug("YAML package not available, skipping YAML validation");
         return result;
       }
 
-      const content = await fs.readFile(filePath, 'utf-8');
+      const content = await fs.readFile(filePath, "utf-8");
       yaml.parse(content);
 
       logger.debug(`YAML validation passed for ${filePath}`);
-
     } catch (error: any) {
-      if (error.code === 'MODULE_NOT_FOUND') {
-        logger.debug('YAML package not available, skipping YAML validation');
+      if (error.code === "MODULE_NOT_FOUND") {
+        logger.debug("YAML package not available, skipping YAML validation");
       } else {
         result.isValid = false;
         result.errors.push({
-          rule: 'yaml-syntax',
+          rule: "yaml-syntax",
           message: `Invalid YAML: ${error.message}`,
           file: filePath,
-          severity: 'error',
+          severity: "error",
         });
       }
     }
@@ -308,7 +313,7 @@ export class YAMLValidator extends BaseValidator {
  */
 export class PatternValidator extends BaseValidator {
   constructor(config: ValidatorConfig) {
-    super('pattern', config);
+    super("pattern", config);
   }
 
   async validate(filePath: string): Promise<ValidationResult> {
@@ -323,8 +328,8 @@ export class PatternValidator extends BaseValidator {
     }
 
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
-      const lines = content.split('\n');
+      const content = await fs.readFile(filePath, "utf-8");
+      const lines = content.split("\n");
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
@@ -336,11 +341,11 @@ export class PatternValidator extends BaseValidator {
               message: rule.message,
               file: filePath,
               line: i + 1,
-              column: line.indexOf(line.match(rule.pattern)?.[0] || '') + 1,
+              column: line.indexOf(line.match(rule.pattern)?.[0] || "") + 1,
               severity: rule.severity,
             };
 
-            if (rule.severity === 'error') {
+            if (rule.severity === "error") {
               result.errors.push(message);
               result.isValid = false;
             } else {
@@ -350,16 +355,17 @@ export class PatternValidator extends BaseValidator {
         }
       }
 
-      logger.debug(`Pattern validation completed for ${filePath}: ${result.errors.length} errors, ${result.warnings.length} warnings`);
-
+      logger.debug(
+        `Pattern validation completed for ${filePath}: ${result.errors.length} errors, ${result.warnings.length} warnings`
+      );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       logger.error(`Pattern validation failed for ${filePath}:`, error);
       result.errors.push({
-        rule: 'pattern-error',
+        rule: "pattern-error",
         message: `Pattern validation failed: ${error.message}`,
         file: filePath,
-        severity: 'error',
+        severity: "error",
       });
       result.isValid = false;
     }
@@ -432,15 +438,19 @@ export class ValidatorRegistry {
               warningCount: validatorResult.warnings.length,
             },
           };
-
         } catch (err) {
           const error = err instanceof Error ? err : new Error(String(err));
-          logger.error(`Validator ${validator.getName()} failed for ${filePath}:`, error);
+          logger.error(
+            `Validator ${validator.getName()} failed for ${filePath}:`,
+            error
+          );
           result.errors.push({
-            rule: 'validator-error',
-            message: `Validator ${validator.getName()} failed: ${error.message}`,
+            rule: "validator-error",
+            message: `Validator ${validator.getName()} failed: ${
+              error.message
+            }`,
             file: filePath,
-            severity: 'error',
+            severity: "error",
           });
           result.isValid = false;
         }
@@ -453,16 +463,19 @@ export class ValidatorRegistry {
   /**
    * Check if a validator should be applied to a file type
    */
-  private shouldValidateFile(validatorName: string, extension: string): boolean {
+  private shouldValidateFile(
+    validatorName: string,
+    extension: string
+  ): boolean {
     const validatorsByExtension: Record<string, string[]> = {
-      js: ['eslint', 'pattern'],
-      jsx: ['eslint', 'pattern'],
-      ts: ['eslint', 'pattern'],
-      tsx: ['eslint', 'pattern'],
-      json: ['json'],
-      yaml: ['yaml'],
-      yml: ['yaml'],
-      md: ['pattern'],
+      js: ["eslint", "pattern"],
+      jsx: ["eslint", "pattern"],
+      ts: ["eslint", "pattern"],
+      tsx: ["eslint", "pattern"],
+      json: ["json"],
+      yaml: ["yaml"],
+      yml: ["yaml"],
+      md: ["pattern"],
     };
 
     return validatorsByExtension[extension]?.includes(validatorName) || false;
@@ -476,39 +489,51 @@ export function createValidatorRegistry(): ValidatorRegistry {
   const registry = new ValidatorRegistry();
 
   // Register default validators
-  registry.register('eslint', new ESLintValidator({
-    enabled: true,
-    rules: {},
-  }));
+  registry.register(
+    "eslint",
+    new ESLintValidator({
+      enabled: true,
+      rules: {},
+    })
+  );
 
-  registry.register('json', new JSONValidator({
-    enabled: true,
-    rules: {},
-  }));
+  registry.register(
+    "json",
+    new JSONValidator({
+      enabled: true,
+      rules: {},
+    })
+  );
 
-  registry.register('yaml', new YAMLValidator({
-    enabled: true,
-    rules: {},
-  }));
+  registry.register(
+    "yaml",
+    new YAMLValidator({
+      enabled: true,
+      rules: {},
+    })
+  );
 
-  registry.register('pattern', new PatternValidator({
-    enabled: true,
-    rules: {},
-    customRules: [
-      {
-        name: 'console-log',
-        pattern: /console\.log\(/,
-        message: 'Avoid console.log in production code',
-        severity: 'warning' as const,
-      },
-      {
-        name: 'todo-comment',
-        pattern: /(TODO|FIXME|XXX)/i,
-        message: 'TODO comment found',
-        severity: 'warning' as const,
-      },
-    ],
-  }));
+  registry.register(
+    "pattern",
+    new PatternValidator({
+      enabled: true,
+      rules: {},
+      customRules: [
+        {
+          name: "console-log",
+          pattern: /console\.log\(/,
+          message: "Avoid console.log in production code",
+          severity: "warning" as const,
+        },
+        {
+          name: "todo-comment",
+          pattern: /(TODO|FIXME|XXX)/i,
+          message: "TODO comment found",
+          severity: "warning" as const,
+        },
+      ],
+    })
+  );
 
   return registry;
 }

@@ -66,12 +66,12 @@ Surveille le système de fichiers et filtre les événements pertinents.
 
 **Fichiers :** `src/detection/`
 
-| Classe / Fichier | Rôle |
-|------------------|------|
-| `Watcher` | Interface avec Chokidar, émet des événements bruts |
-| `FileFilter` | Filtre par extension, pattern, taille, date de modification |
-| `DetectionEventBus` | Bus d'événements typé, relaye les événements filtrés |
-| `FilterPresets` | Presets prêts à l'emploi (`jsTsProject`, `minimal`, `comprehensive`) |
+| Classe / Fichier    | Rôle                                                                 |
+| ------------------- | -------------------------------------------------------------------- |
+| `Watcher`           | Interface avec Chokidar, émet des événements bruts                   |
+| `FileFilter`        | Filtre par extension, pattern, taille, date de modification          |
+| `DetectionEventBus` | Bus d'événements typé, relaye les événements filtrés                 |
+| `FilterPresets`     | Presets prêts à l'emploi (`jsTsProject`, `minimal`, `comprehensive`) |
 
 **Événements émis :**
 
@@ -84,13 +84,13 @@ DETECTION_ERROR  → erreur du watcher
 
 **Filtres disponibles :**
 
-| Filtre | Description |
-|--------|-------------|
-| `extensions` | Liste blanche d'extensions (ex: `['ts', 'js']`) |
-| `excludePatterns` | Patterns glob à exclure (ex: `['node_modules/**']`) |
-| `includePatterns` | Patterns glob à inclure |
-| `maxFileSize` / `minFileSize` | Taille en bytes |
-| `modifiedWithin` | Délai max depuis la dernière modification (ms) |
+| Filtre                        | Description                                         |
+| ----------------------------- | --------------------------------------------------- |
+| `extensions`                  | Liste blanche d'extensions (ex: `['ts', 'js']`)     |
+| `excludePatterns`             | Patterns glob à exclure (ex: `['node_modules/**']`) |
+| `includePatterns`             | Patterns glob à inclure                             |
+| `maxFileSize` / `minFileSize` | Taille en bytes                                     |
+| `modifiedWithin`              | Délai max depuis la dernière modification (ms)      |
 
 ---
 
@@ -100,17 +100,17 @@ Valide le code dès qu'un fichier est détecté ou modifié.
 
 **Fichiers :** `src/prevention/`
 
-| Classe / Fichier | Rôle |
-|------------------|------|
-| `PreventionModule` | Orchestre la validation et l'exécution des scripts |
-| `BaseValidator` | Classe abstraite pour les validateurs |
-| `ESLintValidator` | Exécute ESLint sur les fichiers JS/TS |
-| `JSONValidator` | Vérifie la syntaxe JSON |
-| `YAMLValidator` | Vérifie la syntaxe YAML (optionnel) |
-| `PatternValidator` | Détecte des patterns personnalisés (console.log, TODO, etc.) |
-| `ValidatorRegistry` | Enregistre et résout les validateurs par nom |
-| `ScriptRunner` | Exécute des scripts shell (ESLint --fix, Prettier, tsc, etc.) |
-| `PreventionConfigManager` | Gère les règles depuis `config/prevention-rules.json` |
+| Classe / Fichier          | Rôle                                                          |
+| ------------------------- | ------------------------------------------------------------- |
+| `PreventionModule`        | Orchestre la validation et l'exécution des scripts            |
+| `BaseValidator`           | Classe abstraite pour les validateurs                         |
+| `ESLintValidator`         | Exécute ESLint sur les fichiers JS/TS                         |
+| `JSONValidator`           | Vérifie la syntaxe JSON                                       |
+| `YAMLValidator`           | Vérifie la syntaxe YAML (optionnel)                           |
+| `PatternValidator`        | Détecte des patterns personnalisés (console.log, TODO, etc.)  |
+| `ValidatorRegistry`       | Enregistre et résout les validateurs par nom                  |
+| `ScriptRunner`            | Exécute des scripts shell (ESLint --fix, Prettier, tsc, etc.) |
+| `PreventionConfigManager` | Gère les règles depuis `config/prevention-rules.json`         |
 
 **Règles par défaut :**
 
@@ -124,6 +124,7 @@ Dependency Check     → info     → package.json
 ```
 
 **Scripts intégrés :**
+
 - `npx eslint --fix`
 - `npx prettier --write`
 - `npx tsc --noEmit`
@@ -138,40 +139,40 @@ Corrige les problèmes détectés et notifie les canaux configurés.
 
 **Fichiers :** `src/trigger/`
 
-| Classe / Fichier | Rôle |
-|------------------|------|
-| `TriggerModule` | Orchestre règles, correcteurs et notifieurs |
-| `TriggerRuleManager` | Évalue les règles déclencheurs, gère les cooldowns |
-| `BaseCorrector` | Classe abstraite pour les corrections |
-| `ESLintFixCorrector` | Exécute `eslint --fix` sur un fichier |
-| `PrettierFormatCorrector` | Exécute `prettier --write` sur un fichier |
-| `TextReplacementCorrector` | Remplace, insère ou supprime du texte |
-| `CommandCorrector` | Exécute des commandes shell arbitraires |
-| `CorrectorRegistry` | Enregistre et résout les correcteurs |
-| `BaseNotifier` | Classe abstraite pour les notifications |
-| `SlackNotifier` | Envoie des messages structurés sur Slack |
-| `EmailNotifier` | Envoie des emails via Nodemailer |
-| `ConsoleNotifier` | Log dans la console |
-| `FileNotifier` | Écrit dans un fichier de log dédié |
-| `NotifierRegistry` | Enregistre et résout les notifieurs |
+| Classe / Fichier           | Rôle                                               |
+| -------------------------- | -------------------------------------------------- |
+| `TriggerModule`            | Orchestre règles, correcteurs et notifieurs        |
+| `TriggerRuleManager`       | Évalue les règles déclencheurs, gère les cooldowns |
+| `BaseCorrector`            | Classe abstraite pour les corrections              |
+| `ESLintFixCorrector`       | Exécute `eslint --fix` sur un fichier              |
+| `PrettierFormatCorrector`  | Exécute `prettier --write` sur un fichier          |
+| `TextReplacementCorrector` | Remplace, insère ou supprime du texte              |
+| `CommandCorrector`         | Exécute des commandes shell arbitraires            |
+| `CorrectorRegistry`        | Enregistre et résout les correcteurs               |
+| `BaseNotifier`             | Classe abstraite pour les notifications            |
+| `SlackNotifier`            | Envoie des messages structurés sur Slack           |
+| `EmailNotifier`            | Envoie des emails via Nodemailer                   |
+| `ConsoleNotifier`          | Log dans la console                                |
+| `FileNotifier`             | Écrit dans un fichier de log dédié                 |
+| `NotifierRegistry`         | Enregistre et résout les notifieurs                |
 
 **Actions disponibles :**
 
 ```typescript
-type ActionType = 'correct' | 'notify' | 'log' | 'skip' | 'custom';
+type ActionType = "correct" | "notify" | "log" | "skip" | "custom";
 ```
 
 **Types de règles déclencheurs (config/trigger-rules.json) :**
 
-| Propriété | Description |
-|-----------|-------------|
-| `eventTypes` | Types d'événements déclencheurs (`fileModified`, `preventionFailed`) |
-| `fileExtensions` | Extensions ciblées |
-| `filePatterns` | Patterns de fichiers |
-| `errorPatterns` | Patterns d'erreur à détecter |
-| `severity` | Seuil de sévérité minimal |
-| `cooldown` | Période de repos entre deux exécutions |
-| `priority` | Ordre d'exécution (100 = premier) |
+| Propriété        | Description                                                          |
+| ---------------- | -------------------------------------------------------------------- |
+| `eventTypes`     | Types d'événements déclencheurs (`fileModified`, `preventionFailed`) |
+| `fileExtensions` | Extensions ciblées                                                   |
+| `filePatterns`   | Patterns de fichiers                                                 |
+| `errorPatterns`  | Patterns d'erreur à détecter                                         |
+| `severity`       | Seuil de sévérité minimal                                            |
+| `cooldown`       | Période de repos entre deux exécutions                               |
+| `priority`       | Ordre d'exécution (100 = premier)                                    |
 
 ---
 
@@ -229,9 +230,9 @@ Commands:
 ## API programmatique
 
 ```typescript
-import { WatcherService } from 'watcher-service';
+import { WatcherService } from "watcher-service";
 
-const service = new WatcherService({ watchDir: './src' });
+const service = new WatcherService({ watchDir: "./src" });
 
 await service.initialize();
 await service.start();
@@ -243,11 +244,11 @@ await service.stop();
 Utilisation modulaire :
 
 ```typescript
-import { createDetectionModule } from 'watcher-service/detection';
-import { createPreventionModule } from 'watcher-service/prevention';
-import { createTriggerModule } from 'watcher-service/trigger';
+import { createDetectionModule } from "watcher-service/detection";
+import { createPreventionModule } from "watcher-service/prevention";
+import { createTriggerModule } from "watcher-service/trigger";
 
-const detection = createDetectionModule({ watchDir: './src' });
+const detection = createDetectionModule({ watchDir: "./src" });
 await detection.start();
 ```
 
@@ -258,11 +259,15 @@ await detection.start();
 ### Ajouter un validateur
 
 ```typescript
-import { BaseValidator, ValidatorRegistry, ValidationResult } from '../prevention/validators.js';
+import {
+  BaseValidator,
+  ValidatorRegistry,
+  ValidationResult,
+} from "../prevention/validators.js";
 
 class MyValidator extends BaseValidator {
   constructor() {
-    super('my-validator', { enabled: true, rules: {} });
+    super("my-validator", { enabled: true, rules: {} });
   }
 
   async validate(filePath: string): Promise<ValidationResult> {
@@ -272,7 +277,7 @@ class MyValidator extends BaseValidator {
 }
 
 // Enregistrement
-registry.register('my-validator', new MyValidator());
+registry.register("my-validator", new MyValidator());
 ```
 
 ### Ajouter un correcteur
@@ -302,11 +307,16 @@ registry.register('my-corrector', new MyCorrector({ ... }));
 ### Ajouter un notifieur
 
 ```typescript
-import { BaseNotifier, NotificationData, NotificationResult, NotificationChannel } from '../trigger/notifiers.js';
+import {
+  BaseNotifier,
+  NotificationData,
+  NotificationResult,
+  NotificationChannel,
+} from "../trigger/notifiers.js";
 
 class WebhookNotifier extends BaseNotifier {
   constructor() {
-    super('webhook', true);
+    super("webhook", true);
   }
 
   async send(data: NotificationData): Promise<NotificationResult> {
@@ -332,32 +342,32 @@ npm run lint          # ESLint
 
 **Couverture actuelle :**
 
-| Module | Tests | Couvert |
-|--------|-------|---------|
-| `shared/utils.ts` | 18 | Utilitaires fichiers, validation, debounce |
-| `detection/filters.ts` | 12 | Filtres extension, pattern, taille, presets |
-| `prevention/validators.ts` | 11 | JSON, patterns, registry |
-| `trigger/notifiers.ts` | 13 | Console, fichier, registry, utils |
+| Module                     | Tests | Couvert                                     |
+| -------------------------- | ----- | ------------------------------------------- |
+| `shared/utils.ts`          | 18    | Utilitaires fichiers, validation, debounce  |
+| `detection/filters.ts`     | 12    | Filtres extension, pattern, taille, presets |
+| `prevention/validators.ts` | 11    | JSON, patterns, registry                    |
+| `trigger/notifiers.ts`     | 13    | Console, fichier, registry, utils           |
 
 ---
 
 ## Stack
 
-| Technologie | Version | Usage |
-|-------------|---------|-------|
-| Node.js | ^24 | Runtime |
-| TypeScript | ^5.9 | Langage |
-| Chokidar | ^3.5 | File watcher |
-| ESLint | ^8 | Linting |
-| Prettier | ^2.8 | Formatage |
-| Winston | ^3.8 | Logging |
-| Commander.js | ^10 | CLI |
-| Joi | ^17 | Validation de config |
-| Slack SDK | ^6.8 | Notifications Slack |
-| Nodemailer | ^6.9 | Notifications email |
-| Jest | ^29 | Tests |
-| ts-jest | ^29 | Tests TypeScript |
-| tsx | ^4 | Dev runner |
+| Technologie  | Version | Usage                |
+| ------------ | ------- | -------------------- |
+| Node.js      | ^24     | Runtime              |
+| TypeScript   | ^5.9    | Langage              |
+| Chokidar     | ^3.5    | File watcher         |
+| ESLint       | ^8      | Linting              |
+| Prettier     | ^2.8    | Formatage            |
+| Winston      | ^3.8    | Logging              |
+| Commander.js | ^10     | CLI                  |
+| Joi          | ^17     | Validation de config |
+| Slack SDK    | ^6.8    | Notifications Slack  |
+| Nodemailer   | ^6.9    | Notifications email  |
+| Jest         | ^29     | Tests                |
+| ts-jest      | ^29     | Tests TypeScript     |
+| tsx          | ^4      | Dev runner           |
 
 ---
 

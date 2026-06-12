@@ -24,7 +24,7 @@
       "ruleId": "no-console-logs",
       "enabled": true,
       "action": "replace",
-      "pattern": "console.log(",
+      "pattern": "",
       "replacement": "logger.info(",
       "description": "Replace console.log with Winston logger"
     },

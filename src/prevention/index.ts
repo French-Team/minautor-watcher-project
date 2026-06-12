@@ -1,10 +1,13 @@
-import { BaseValidator, ValidatorRegistry, createValidatorRegistry } from './validators.js';
-import { ScriptRunner, createScriptRunner } from './scripts.js';
-import { PreventionConfigManager, createPreventionConfig } from './config.js';
-import { Utils } from '../shared/utils.js';
-import { createChildLogger } from '../shared/logger.js';
+import {
+  ValidatorRegistry,
+  PatternValidator,
+  createValidatorRegistry,
+} from "./validators.js";
+import { ScriptRunner, createScriptRunner } from "./scripts.js";
+import { PreventionConfigManager, createPreventionConfig } from "./config.js";
+import { createChildLogger } from "../shared/logger.js";
 
-const logger = createChildLogger('prevention');
+const logger = createChildLogger("prevention");
 
 /**
  * Prevention result for a file
@@ -15,12 +18,12 @@ export interface PreventionResult {
   errors: Array<{
     rule: string;
     message: string;
-    severity: 'error' | 'warning' | 'info';
+    severity: "error" | "warning" | "info";
   }>;
   warnings: Array<{
     rule: string;
     message: string;
-    severity: 'error' | 'warning' | 'info';
+    severity: "error" | "warning" | "info";
   }>;
   executionTime: number;
   metadata?: Record<string, any>;
@@ -62,7 +65,6 @@ export class PreventionModule {
     this.configManager = createPreventionConfig(config.configPath);
     this.validatorRegistry = createValidatorRegistry();
     this.scriptRunner = createScriptRunner();
-
   }
 
   /**
@@ -70,21 +72,20 @@ export class PreventionModule {
    */
   async start(): Promise<void> {
     if (this.isRunning) {
-      logger.warn('Prevention module is already running');
+      logger.warn("Prevention module is already running");
       return;
     }
 
     try {
-      logger.info('Starting prevention module...');
+      logger.info("Starting prevention module...");
 
       // Update component configurations
       await this.updateComponentConfigurations();
 
       this.isRunning = true;
-      logger.info('Prevention module started successfully');
-
+      logger.info("Prevention module started successfully");
     } catch (error) {
-      logger.error('Failed to start prevention module:', error);
+      logger.error("Failed to start prevention module:", error);
       throw error;
     }
   }
@@ -94,21 +95,20 @@ export class PreventionModule {
    */
   async stop(): Promise<void> {
     if (!this.isRunning) {
-      logger.warn('Prevention module is not running');
+      logger.warn("Prevention module is not running");
       return;
     }
 
     try {
-      logger.info('Stopping prevention module...');
+      logger.info("Stopping prevention module...");
 
       // Stop all running scripts
       this.scriptRunner.stopAllScripts();
 
       this.isRunning = false;
-      logger.info('Prevention module stopped successfully');
-
+      logger.info("Prevention module stopped successfully");
     } catch (error) {
-      logger.error('Failed to stop prevention module:', error);
+      logger.error("Failed to stop prevention module:", error);
       throw error;
     }
   }
@@ -148,7 +148,9 @@ export class PreventionModule {
         return result;
       }
 
-      logger.info(`Applying ${applicableRules.length} prevention rules to ${filePath}`);
+      logger.info(
+        `Applying ${applicableRules.length} prevention rules to ${filePath}`
+      );
 
       // Process each rule
       for (const rule of applicableRules) {
@@ -164,14 +166,16 @@ export class PreventionModule {
           if (ruleResult.warnings.length > 0 && this.config.failOnWarning) {
             result.success = false;
           }
-
         } catch (err) {
           const error = err instanceof Error ? err : new Error(String(err));
-          logger.error(`Error processing rule ${rule.id} for ${filePath}:`, error);
+          logger.error(
+            `Error processing rule ${rule.id} for ${filePath}:`,
+            error
+          );
           result.errors.push({
             rule: rule.id,
             message: `Rule processing failed: ${error.message}`,
-            severity: 'error',
+            severity: "error",
           });
           result.success = false;
         }
@@ -179,13 +183,15 @@ export class PreventionModule {
 
       // Execute applicable scripts
       try {
-        const scriptResults = await this.scriptRunner.executeScriptsForFile(filePath);
+        const scriptResults = await this.scriptRunner.executeScriptsForFile(
+          filePath
+        );
         for (const scriptResult of scriptResults) {
           if (!scriptResult.success) {
             result.errors.push({
-              rule: scriptResult.error?.message || 'script-failed',
+              rule: scriptResult.error?.message || "script-failed",
               message: `Script execution failed: ${scriptResult.stderr}`,
-              severity: 'error',
+              severity: "error",
             });
             result.success = false;
           }
@@ -194,9 +200,9 @@ export class PreventionModule {
         const error = err instanceof Error ? err : new Error(String(err));
         logger.error(`Error executing scripts for ${filePath}:`, error);
         result.errors.push({
-          rule: 'script-execution',
+          rule: "script-execution",
           message: `Script execution error: ${error.message}`,
-          severity: 'error',
+          severity: "error",
         });
         result.success = false;
       }
@@ -204,18 +210,19 @@ export class PreventionModule {
       result.executionTime = Date.now() - startTime;
 
       logger.info(
-        `Prevention processing completed for ${filePath}: ${result.success ? 'SUCCESS' : 'FAILED'} ` +
-        `(${result.errors.length} errors, ${result.warnings.length} warnings) in ${result.executionTime}ms`
+        `Prevention processing completed for ${filePath}: ${
+          result.success ? "SUCCESS" : "FAILED"
+        } ` +
+          `(${result.errors.length} errors, ${result.warnings.length} warnings) in ${result.executionTime}ms`
       );
-
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       logger.error(`Error in prevention processing for ${filePath}:`, error);
       result.success = false;
       result.errors.push({
-        rule: 'prevention-error',
+        rule: "prevention-error",
         message: `Prevention processing failed: ${error.message}`,
-        severity: 'error',
+        severity: "error",
       });
       result.executionTime = Date.now() - startTime;
     }
@@ -226,12 +233,31 @@ export class PreventionModule {
   /**
    * Process a single rule for a file
    */
-  private async processRule(filePath: string, rule: any): Promise<{
-    errors: Array<{ rule: string; message: string; severity: 'error' | 'warning' | 'info' }>;
-    warnings: Array<{ rule: string; message: string; severity: 'error' | 'warning' | 'info' }>;
+  private async processRule(
+    filePath: string,
+    rule: any
+  ): Promise<{
+    errors: Array<{
+      rule: string;
+      message: string;
+      severity: "error" | "warning" | "info";
+    }>;
+    warnings: Array<{
+      rule: string;
+      message: string;
+      severity: "error" | "warning" | "info";
+    }>;
   }> {
-    const errors: Array<{ rule: string; message: string; severity: 'error' | 'warning' | 'info' }> = [];
-    const warnings: Array<{ rule: string; message: string; severity: 'error' | 'warning' | 'info' }> = [];
+    const errors: Array<{
+      rule: string;
+      message: string;
+      severity: "error" | "warning" | "info";
+    }> = [];
+    const warnings: Array<{
+      rule: string;
+      message: string;
+      severity: "error" | "warning" | "info";
+    }> = [];
 
     // Run validators
     for (const validatorName of rule.validators) {
@@ -244,7 +270,7 @@ export class PreventionModule {
             errors.push({
               rule: `${rule.id}:${err.rule}`,
               message: err.message,
-              severity: err.severity || 'error',
+              severity: err.severity || "error",
             });
           }
 
@@ -252,17 +278,19 @@ export class PreventionModule {
             warnings.push({
               rule: `${rule.id}:${warning.rule}`,
               message: warning.message,
-              severity: warning.severity || 'warning',
+              severity: warning.severity || "warning",
             });
           }
-
         } catch (err) {
           const error = err instanceof Error ? err : new Error(String(err));
-          logger.error(`Validator ${validatorName} failed for rule ${rule.id}:`, error);
+          logger.error(
+            `Validator ${validatorName} failed for rule ${rule.id}:`,
+            error
+          );
           errors.push({
             rule: `${rule.id}:${validatorName}`,
             message: `Validator failed: ${error.message}`,
-            severity: 'error',
+            severity: "error",
           });
         }
       }
@@ -287,8 +315,13 @@ export class PreventionModule {
     // Update validator registry with custom validators
     if (config.customValidators) {
       for (const customValidator of config.customValidators) {
-        // This would need to be implemented based on the specific validator type
-        logger.info(`Custom validator ${customValidator.name} registered`);
+        const validator = new PatternValidator({
+          enabled: true,
+          rules: {},
+          customRules: customValidator.config?.customRules || [],
+        });
+        this.validatorRegistry.register(customValidator.name, validator);
+        logger.info(`Custom validator registered: ${customValidator.name}`);
       }
     }
   }
@@ -324,7 +357,7 @@ export class PreventionModule {
   async reloadConfig(): Promise<void> {
     await this.configManager.reloadConfig();
     await this.updateComponentConfigurations();
-    logger.info('Configuration reloaded');
+    logger.info("Configuration reloaded");
   }
 
   /**
@@ -361,14 +394,18 @@ export class PreventionModule {
 /**
  * Factory function to create a prevention module
  */
-export function createPreventionModule(config?: PreventionModuleConfig): PreventionModule {
+export function createPreventionModule(
+  config?: PreventionModuleConfig
+): PreventionModule {
   return new PreventionModule(config);
 }
 
 /**
  * Quick setup function for common use cases
  */
-export async function setupPrevention(config?: PreventionModuleConfig): Promise<PreventionModule> {
+export async function setupPrevention(
+  config?: PreventionModuleConfig
+): Promise<PreventionModule> {
   const module = createPreventionModule(config);
   await module.start();
   return module;

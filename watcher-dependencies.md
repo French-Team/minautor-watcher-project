@@ -1,15 +1,18 @@
 # Dépendances Recommandées pour le Watcher (Open Source et Gratuites Uniquement)
 
 ## Vue d'ensemble
+
 Après vérification, toutes les dépendances sélectionnées sont open source et gratuites. J'ai défini les meilleurs outils basés sur popularité, maintenance active et adéquation aux besoins du Watcher. De plus, j'ai ajouté des dépendances importantes pour surveiller un projet que j'aurais pu négliger initialement, comme la gestion des erreurs, les tests et la sécurité.
 
 ## 1. Surveillance de Fichiers (File Watching)
+
 - **Chokidar** (Meilleur choix) : Bibliothèque principale pour surveiller les changements en temps réel. Plus robuste et populaire que les alternatives comme fs.watch intégré à Node.js.
   - NPM : `chokidar`
   - Avantages : Gestion des événements, support pour les patterns glob, exclusion automatique, open source et maintenue activement.
   - Utilisation : `const watcher = chokidar.watch('path/to/folder', {ignored: /node_modules/});`
 
 ## 2. Linting et Formatage Automatique
+
 - **ESLint** (Meilleur choix) : Pour le linting et la détection d'erreurs. Standard de l'industrie.
   - NPM : `eslint`
 - **Prettier** (Meilleur choix) : Pour le formatage automatique du code. Intégré avec ESLint pour éviter les conflits.
@@ -21,6 +24,7 @@ Après vérification, toutes les dépendances sélectionnées sont open source e
 - Avantages : Correction automatique via `eslint --fix`. Toutes open source et gratuites.
 
 ## 3. Notifications (Slack, Email)
+
 - **@slack/web-api** (Meilleur choix pour Slack) : Bibliothèque officielle pour envoyer des notifications à Slack via API ou webhooks.
   - NPM : `@slack/web-api`
   - Avantages : Open source, gratuite, support complet pour Slack (avec limites d'API gratuites).
@@ -31,36 +35,44 @@ Après vérification, toutes les dépendances sélectionnées sont open source e
   - NPM : `notifme-sdk`
 
 ## 4. Gestion de Configuration (.env)
+
 - **dotenv** (Meilleur choix) : Charge les variables d'environnement depuis `.env.local`. Standard open source et gratuit.
   - NPM : `dotenv`
   - Utilisation : `require('dotenv').config(); process.env.WATCH_DIR;`
 
 ## 5. Interface en Ligne de Commande (CLI)
+
 - **Commander.js** (Meilleur choix) : Pour créer une CLI portable et facile. Plus simple et populaire que yargs ou oclif pour un outil comme le Watcher.
   - NPM : `commander`
   - Avantages : Parsing des arguments, génération d'aide automatique, open source et maintenue.
 
 ## 6. Logging
+
 - **Winston** (Meilleur choix) : Bibliothèque de logging flexible pour les logs structurés. Plus populaire et flexible que les alternatives comme Morgan (spécialisé HTTP).
   - NPM : `winston`
   - Avantages : Support pour JSON, niveaux de log, transports multiples, open source et gratuite.
 
 ## Dépendances Supplémentaires Importantes (Négligées Initialement)
+
 Voici des dépendances open source et gratuites que j'ai ajoutées pour améliorer la surveillance de projet, en me concentrant sur la robustesse, les tests et la sécurité.
 
 - **Jest** (Tests) : Framework de tests pour vérifier le comportement du Watcher. Essentiel pour s'assurer que les surveillances et corrections fonctionnent correctement.
+
   - NPM : `jest`
   - Avantages : Support pour tests unitaires et d'intégration, open source et largement utilisé.
 
 - **fs-extra** (Gestion de fichiers avancée) : Extensions pour les opérations de fichiers (copie, suppression récursive). Utile pour manipuler des fichiers surveillés.
+
   - NPM : `fs-extra`
   - Avantages : Open source, basé sur fs natif, ajoute des fonctionnalités sans réinventer.
 
 - **joi** (Validation) : Pour valider les configurations et les données d'entrée (ex. : règles de fichiers). Évite les erreurs dues à des configs invalides.
+
   - NPM : `joi`
   - Avantages : Open source, schéma de validation robuste, utilisé dans de nombreux projets Node.js.
 
 - **helmet** (Sécurité) : Middleware pour sécuriser les applications Node.js (ex. : protection contre les vulnérabilités courantes). Utile si le Watcher expose une API.
+
   - NPM : `helmet`
   - Avantages : Open source, gratuit, améliore la sécurité sans effort supplémentaire.
 
@@ -69,6 +81,7 @@ Voici des dépendances open source et gratuites que j'ai ajoutées pour amélior
   - Avantages : Open source, intégré à Node.js, utile pour les règles de fichiers.
 
 ## Liste Complète des Dépendances Suggérées (Mise à Jour)
+
 Voici un `package.json` exemple avec les versions recommandées (toutes open source et gratuites) :
 
 ```json
@@ -100,6 +113,7 @@ Voici un `package.json` exemple avec les versions recommandées (toutes open sou
 ```
 
 ## Étapes de Recherche Menées
+
 1. **File Watching** : Identification de Chokidar comme outil principal.
 2. **Linting/Formatage** : Confirmation d'ESLint et Prettier avec intégration.
 3. **Notifications** : Sélection de @slack/web-api et notifme-sdk.

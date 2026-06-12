@@ -41,7 +41,12 @@
   "engines": {
     "node": ">=14.0.0"
   },
-  "keywords": ["watcher", "file-monitoring", "eslint", "automation"],
+  "keywords": [
+    "watcher",
+    "file-monitoring",
+    "eslint",
+    "automation"
+  ],
   "author": "Votre Nom",
   "license": "MIT"
 }

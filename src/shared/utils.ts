@@ -1,8 +1,8 @@
-import fs from 'fs-extra';
-import path from 'path';
-import { glob } from 'glob';
-import Joi from 'joi';
-import logger from './logger.js';
+import fs from "fs-extra";
+import path from "path";
+import { glob } from "glob";
+import Joi from "joi";
+import logger from "./logger.js";
 
 /**
  * Utility class for common file and system operations
@@ -31,7 +31,7 @@ export class Utils {
         return null;
       }
 
-      const content = await fs.readFile(filePath, 'utf-8');
+      const content = await fs.readFile(filePath, "utf-8");
       return JSON.parse(content) as T;
     } catch (error) {
       logger.error(`Error reading JSON file ${filePath}:`, error);
@@ -77,7 +77,10 @@ export class Utils {
   /**
    * Check if file extension is in the allowed list
    */
-  static isAllowedExtension(filePath: string, allowedExtensions: string[]): boolean {
+  static isAllowedExtension(
+    filePath: string,
+    allowedExtensions: string[]
+  ): boolean {
     const extension = this.getFileExtension(filePath);
     return allowedExtensions.includes(extension);
   }
@@ -85,14 +88,17 @@ export class Utils {
   /**
    * Check if path should be excluded based on patterns
    */
-  static shouldExcludePath(filePath: string, excludePatterns: string[]): boolean {
+  static shouldExcludePath(
+    filePath: string,
+    excludePatterns: string[]
+  ): boolean {
     const relativePath = path.relative(process.cwd(), filePath);
-    return excludePatterns.some(pattern => {
+    return excludePatterns.some((pattern) => {
       // Support for wildcards and simple patterns
       const regexPattern = pattern
-        .replace(/\./g, '\\.')
-        .replace(/\*/g, '.*')
-        .replace(/\?/g, '.');
+        .replace(/\./g, "\\.")
+        .replace(/\*/g, ".*")
+        .replace(/\?/g, ".");
       return new RegExp(`^${regexPattern}`).test(relativePath);
     });
   }
@@ -119,7 +125,30 @@ export class Utils {
    * Sleep utility for delays
    */
   static sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Parse a file size string (e.g. "1MB", "500KB", "2GB") to bytes
+   */
+  static parseFileSize(size: string | number): number {
+    if (typeof size === "number") return size;
+
+    const match = size.match(/^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)$/i);
+    if (!match) return parseInt(size, 10) || 0;
+
+    const value = parseFloat(match[1]);
+    const unit = match[2].toUpperCase();
+
+    const multipliers: Record<string, number> = {
+      B: 1,
+      KB: 1024,
+      MB: 1024 * 1024,
+      GB: 1024 * 1024 * 1024,
+      TB: 1024 * 1024 * 1024 * 1024,
+    };
+
+    return Math.floor(value * (multipliers[unit] || 1));
   }
 
   /**
@@ -129,7 +158,7 @@ export class Utils {
     const { error, value } = schema.validate(config, { allowUnknown: true });
 
     if (error) {
-      logger.error('Configuration validation error:', error.details);
+      logger.error("Configuration validation error:", error.details);
       throw new Error(`Invalid configuration: ${error.details[0].message}`);
     }
 
@@ -144,7 +173,9 @@ export const ConfigSchemas = {
   watcherConfig: Joi.object({
     watchDir: Joi.string().required(),
     excludedDirs: Joi.array().items(Joi.string()).default([]),
-    watchExtensions: Joi.array().items(Joi.string()).default(['js', 'ts', 'jsx', 'tsx']),
+    watchExtensions: Joi.array()
+      .items(Joi.string())
+      .default(["js", "ts", "jsx", "tsx"]),
     processingDelay: Joi.number().default(100),
   }),
 
@@ -153,7 +184,7 @@ export const ConfigSchemas = {
       Joi.object({
         id: Joi.string().required(),
         enabled: Joi.boolean().default(true),
-        severity: Joi.string().valid('error', 'warn').default('error'),
+        severity: Joi.string().valid("error", "warn").default("error"),
         extensions: Joi.array().items(Joi.string()),
       })
     ),
@@ -162,7 +193,7 @@ export const ConfigSchemas = {
   triggerRules: Joi.object({
     autoCorrect: Joi.object({
       enabled: Joi.boolean().default(true),
-      maxFileSize: Joi.string().default('1MB'),
+      maxFileSize: Joi.string().default("1MB"),
       timeout: Joi.number().default(30000),
     }),
     corrections: Joi.array().items(

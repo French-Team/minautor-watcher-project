@@ -1,9 +1,7 @@
-import fs from 'fs-extra';
-import path from 'path';
-import { Utils } from '../shared/utils.js';
-import { createChildLogger } from '../shared/logger.js';
+import fs from "fs-extra";
+import { createChildLogger } from "../shared/logger.js";
 
-const logger = createChildLogger('detection-filters');
+const logger = createChildLogger("detection-filters");
 
 /**
  * File event data structure
@@ -59,14 +57,20 @@ export class FileFilter {
     }
 
     // Pattern filters
-    if (this.criteria.excludePatterns && this.criteria.excludePatterns.length > 0) {
+    if (
+      this.criteria.excludePatterns &&
+      this.criteria.excludePatterns.length > 0
+    ) {
       const excludeFilter = this.filterByExcludePatterns(event);
       if (!excludeFilter.passed) {
         return excludeFilter;
       }
     }
 
-    if (this.criteria.includePatterns && this.criteria.includePatterns.length > 0) {
+    if (
+      this.criteria.includePatterns &&
+      this.criteria.includePatterns.length > 0
+    ) {
       const includeFilter = this.filterByIncludePatterns(event);
       if (!includeFilter.passed) {
         return includeFilter;
@@ -89,7 +93,7 @@ export class FileFilter {
       }
     }
 
-    return { passed: true, metadata: { filters: 'all_passed' } };
+    return { passed: true, metadata: { filters: "all_passed" } };
   }
 
   /**
@@ -99,7 +103,9 @@ export class FileFilter {
     if (!this.criteria.extensions?.includes(event.extension)) {
       return {
         passed: false,
-        reason: `Extension '${event.extension}' not in allowed list: ${this.criteria.extensions?.join(', ')}`,
+        reason: `Extension '${
+          event.extension
+        }' not in allowed list: ${this.criteria.extensions?.join(", ")}`,
       };
     }
     return { passed: true };
@@ -124,14 +130,16 @@ export class FileFilter {
    * Filter by include patterns
    */
   private filterByIncludePatterns(event: FileEvent): FilterResult {
-    const matchesAnyPattern = this.criteria.includePatterns!.some(pattern =>
+    const matchesAnyPattern = this.criteria.includePatterns!.some((pattern) =>
       this.matchesPattern(event.relativePath, pattern)
     );
 
     if (!matchesAnyPattern) {
       return {
         passed: false,
-        reason: `Path doesn't match any include pattern: ${this.criteria.includePatterns?.join(', ')}`,
+        reason: `Path doesn't match any include pattern: ${this.criteria.includePatterns?.join(
+          ", "
+        )}`,
       };
     }
     return { passed: true };
@@ -166,7 +174,7 @@ export class FileFilter {
       logger.warn(`Could not get file size for ${event.filePath}:`, error);
       return {
         passed: false,
-        reason: 'Could not determine file size',
+        reason: "Could not determine file size",
       };
     }
   }
@@ -174,7 +182,9 @@ export class FileFilter {
   /**
    * Filter by modification time
    */
-  private async filterByModificationTime(event: FileEvent): Promise<FilterResult> {
+  private async filterByModificationTime(
+    event: FileEvent
+  ): Promise<FilterResult> {
     try {
       const stats = await fs.stat(event.filePath);
       const now = Date.now();
@@ -191,10 +201,13 @@ export class FileFilter {
 
       return { passed: true, metadata: { modifiedTime, timeDiff } };
     } catch (error) {
-      logger.warn(`Could not get modification time for ${event.filePath}:`, error);
+      logger.warn(
+        `Could not get modification time for ${event.filePath}:`,
+        error
+      );
       return {
         passed: false,
-        reason: 'Could not determine modification time',
+        reason: "Could not determine modification time",
       };
     }
   }
@@ -204,12 +217,12 @@ export class FileFilter {
    */
   private matchesPattern(filePath: string, pattern: string): boolean {
     // Simple pattern matching - can be extended for more complex patterns
-    if (pattern.includes('*') || pattern.includes('?')) {
+    if (pattern.includes("*") || pattern.includes("?")) {
       // Convert glob pattern to regex
       const regexPattern = pattern
-        .replace(/\./g, '\\.')
-        .replace(/\*/g, '.*')
-        .replace(/\?/g, '.');
+        .replace(/\./g, "\\.")
+        .replace(/\*/g, ".*")
+        .replace(/\?/g, ".");
       return new RegExp(`^${regexPattern}$`).test(filePath);
     }
 
@@ -222,7 +235,7 @@ export class FileFilter {
    */
   updateCriteria(newCriteria: Partial<FilterCriteria>): void {
     this.criteria = { ...this.criteria, ...newCriteria };
-    logger.info('Filter criteria updated:', this.criteria);
+    logger.info("Filter criteria updated:", this.criteria);
   }
 
   /**
@@ -241,8 +254,8 @@ export const FilterPresets = {
    * Default filter for TypeScript/JavaScript projects
    */
   jsTsProject: (): FilterCriteria => ({
-    extensions: ['js', 'ts', 'jsx', 'tsx', 'json', 'md'],
-    excludePatterns: ['node_modules/**', 'dist/**', 'build/**', '.git/**'],
+    extensions: ["js", "ts", "jsx", "tsx", "json", "md"],
+    excludePatterns: ["node_modules/**", "dist/**", "build/**", ".git/**"],
     maxFileSize: 1024 * 1024, // 1MB
   }),
 
@@ -250,16 +263,34 @@ export const FilterPresets = {
    * Minimal filter for quick scanning
    */
   minimal: (): FilterCriteria => ({
-    extensions: ['js', 'ts'],
-    excludePatterns: ['node_modules/**'],
+    extensions: ["js", "ts"],
+    excludePatterns: ["node_modules/**"],
   }),
 
   /**
    * Comprehensive filter for full project analysis
    */
   comprehensive: (): FilterCriteria => ({
-    extensions: ['js', 'ts', 'jsx', 'tsx', 'json', 'md', 'css', 'scss', 'html', 'yaml', 'yml'],
-    excludePatterns: ['node_modules/**', 'dist/**', 'build/**', '.git/**', '*.log'],
+    extensions: [
+      "js",
+      "ts",
+      "jsx",
+      "tsx",
+      "json",
+      "md",
+      "css",
+      "scss",
+      "html",
+      "yaml",
+      "yml",
+    ],
+    excludePatterns: [
+      "node_modules/**",
+      "dist/**",
+      "build/**",
+      ".git/**",
+      "*.log",
+    ],
     maxFileSize: 5 * 1024 * 1024, // 5MB
     modifiedWithin: 24 * 60 * 60 * 1000, // Last 24 hours
   }),

@@ -7,12 +7,12 @@ export interface PreventionResult {
     errors: Array<{
         rule: string;
         message: string;
-        severity: 'error' | 'warning' | 'info';
+        severity: "error" | "warning" | "info";
     }>;
     warnings: Array<{
         rule: string;
         message: string;
-        severity: 'error' | 'warning' | 'info';
+        severity: "error" | "warning" | "info";
     }>;
     executionTime: number;
     metadata?: Record<string, any>;
@@ -58,10 +58,6 @@ export declare class PreventionModule {
      * Update component configurations based on current settings
      */
     private updateComponentConfigurations;
-    /**
-     * Set up graceful shutdown handlers
-     */
-    private setupGracefulShutdown;
     /**
      * Get current status
      */

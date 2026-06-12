@@ -1,9 +1,9 @@
-import fs from 'fs-extra';
-import path from 'path';
-import Joi from 'joi';
-import { Utils } from '../shared/utils.js';
-import { createChildLogger } from '../shared/logger.js';
-const logger = createChildLogger('prevention-config');
+import fs from "fs-extra";
+import path from "path";
+import Joi from "joi";
+import { Utils } from "../shared/utils.js";
+import { createChildLogger } from "../shared/logger.js";
+const logger = createChildLogger("prevention-config");
 /**
  * Configuration manager for prevention module
  */
@@ -12,17 +12,23 @@ export class PreventionConfigManager {
     configPath;
     configSchema;
     constructor(configPath) {
-        this.configPath = configPath || path.join(process.cwd(), 'config', 'prevention-rules.json');
+        this.configPath =
+            configPath || path.join(process.cwd(), "config", "prevention-rules.json");
         // Define configuration schema
         this.configSchema = Joi.object({
             enabled: Joi.boolean().default(true),
-            rules: Joi.array().items(Joi.object({
+            rules: Joi.array()
+                .items(Joi.object({
                 id: Joi.string().required(),
                 name: Joi.string().required(),
                 description: Joi.string().required(),
                 enabled: Joi.boolean().default(true),
-                severity: Joi.string().valid('error', 'warning', 'info').default('warning'),
-                category: Joi.string().valid('syntax', 'style', 'security', 'performance', 'custom').default('custom'),
+                severity: Joi.string()
+                    .valid("error", "warning", "info")
+                    .default("warning"),
+                category: Joi.string()
+                    .valid("syntax", "style", "security", "performance", "custom")
+                    .default("custom"),
                 validators: Joi.array().items(Joi.string()).default([]),
                 scripts: Joi.array().items(Joi.string()).default([]),
                 conditions: Joi.object({
@@ -36,7 +42,8 @@ export class PreventionConfigManager {
                     notifyOnFailure: Joi.boolean().default(true),
                     blockCommit: Joi.boolean().default(false),
                 }).optional(),
-            })).default([]),
+            }))
+                .default([]),
             globalSettings: Joi.object({
                 failOnError: Joi.boolean().default(true),
                 failOnWarning: Joi.boolean().default(false),
@@ -55,21 +62,23 @@ export class PreventionConfigManager {
             if (fs.pathExistsSync(this.configPath)) {
                 const fileConfig = Utils.readJsonFile(this.configPath);
                 if (fileConfig) {
-                    const { error, value } = this.configSchema.validate(fileConfig, { allowUnknown: true });
+                    const { error, value } = this.configSchema.validate(fileConfig, {
+                        allowUnknown: true,
+                    });
                     if (error) {
                         logger.warn(`Configuration validation error: ${error.message}. Using defaults.`);
                     }
                     else {
-                        logger.info('Configuration loaded from file');
+                        logger.info("Configuration loaded from file");
                         return value;
                     }
                 }
             }
         }
         catch (error) {
-            logger.error('Error loading configuration:', error);
+            logger.error("Error loading configuration:", error);
         }
-        logger.info('Using default configuration');
+        logger.info("Using default configuration");
         return this.getDefaultConfig();
     }
     /**
@@ -80,16 +89,16 @@ export class PreventionConfigManager {
             enabled: true,
             rules: [
                 {
-                    id: 'eslint-validation',
-                    name: 'ESLint Validation',
-                    description: 'Validate JavaScript/TypeScript code with ESLint',
+                    id: "eslint-validation",
+                    name: "ESLint Validation",
+                    description: "Validate JavaScript/TypeScript code with ESLint",
                     enabled: true,
-                    severity: 'error',
-                    category: 'syntax',
-                    validators: ['eslint'],
-                    scripts: ['eslint-fix'],
+                    severity: "error",
+                    category: "syntax",
+                    validators: ["eslint"],
+                    scripts: ["eslint-fix"],
                     conditions: {
-                        fileExtensions: ['js', 'ts', 'jsx', 'tsx'],
+                        fileExtensions: ["js", "ts", "jsx", "tsx"],
                     },
                     actions: {
                         autoFix: true,
@@ -98,16 +107,16 @@ export class PreventionConfigManager {
                     },
                 },
                 {
-                    id: 'prettier-formatting',
-                    name: 'Prettier Formatting',
-                    description: 'Format code with Prettier',
+                    id: "prettier-formatting",
+                    name: "Prettier Formatting",
+                    description: "Format code with Prettier",
                     enabled: true,
-                    severity: 'warning',
-                    category: 'style',
+                    severity: "warning",
+                    category: "style",
                     validators: [],
-                    scripts: ['prettier-format'],
+                    scripts: ["prettier-format"],
                     conditions: {
-                        fileExtensions: ['js', 'ts', 'jsx', 'tsx', 'json', 'md'],
+                        fileExtensions: ["js", "ts", "jsx", "tsx", "json", "md"],
                     },
                     actions: {
                         autoFix: true,
@@ -116,16 +125,16 @@ export class PreventionConfigManager {
                     },
                 },
                 {
-                    id: 'json-validation',
-                    name: 'JSON Validation',
-                    description: 'Validate JSON file syntax',
+                    id: "json-validation",
+                    name: "JSON Validation",
+                    description: "Validate JSON file syntax",
                     enabled: true,
-                    severity: 'error',
-                    category: 'syntax',
-                    validators: ['json'],
+                    severity: "error",
+                    category: "syntax",
+                    validators: ["json"],
                     scripts: [],
                     conditions: {
-                        fileExtensions: ['json'],
+                        fileExtensions: ["json"],
                     },
                     actions: {
                         autoFix: false,
@@ -134,16 +143,16 @@ export class PreventionConfigManager {
                     },
                 },
                 {
-                    id: 'typescript-checking',
-                    name: 'TypeScript Type Checking',
-                    description: 'Run TypeScript compiler for type checking',
+                    id: "typescript-checking",
+                    name: "TypeScript Type Checking",
+                    description: "Run TypeScript compiler for type checking",
                     enabled: true,
-                    severity: 'error',
-                    category: 'syntax',
+                    severity: "error",
+                    category: "syntax",
                     validators: [],
-                    scripts: ['typescript-check'],
+                    scripts: ["typescript-check"],
                     conditions: {
-                        fileExtensions: ['ts', 'tsx'],
+                        fileExtensions: ["ts", "tsx"],
                     },
                     actions: {
                         autoFix: false,
@@ -152,16 +161,16 @@ export class PreventionConfigManager {
                     },
                 },
                 {
-                    id: 'security-audit',
-                    name: 'Security Audit',
-                    description: 'Check for security vulnerabilities in dependencies',
+                    id: "security-audit",
+                    name: "Security Audit",
+                    description: "Check for security vulnerabilities in dependencies",
                     enabled: true,
-                    severity: 'warning',
-                    category: 'security',
+                    severity: "warning",
+                    category: "security",
                     validators: [],
-                    scripts: ['security-audit'],
+                    scripts: ["security-audit"],
                     conditions: {
-                        filePatterns: ['package.json'],
+                        filePatterns: ["package.json"],
                     },
                     actions: {
                         autoFix: false,
@@ -170,16 +179,16 @@ export class PreventionConfigManager {
                     },
                 },
                 {
-                    id: 'dependency-check',
-                    name: 'Dependency Check',
-                    description: 'Check for unused dependencies',
+                    id: "dependency-check",
+                    name: "Dependency Check",
+                    description: "Check for unused dependencies",
                     enabled: true,
-                    severity: 'info',
-                    category: 'performance',
+                    severity: "info",
+                    category: "performance",
                     validators: [],
-                    scripts: ['dependency-check'],
+                    scripts: ["dependency-check"],
                     conditions: {
-                        filePatterns: ['package.json'],
+                        filePatterns: ["package.json"],
                     },
                     actions: {
                         autoFix: false,
@@ -211,10 +220,10 @@ export class PreventionConfigManager {
             this.config = updatedConfig;
             // Save to file
             await Utils.writeJsonFile(this.configPath, this.config);
-            logger.info('Configuration updated and saved');
+            logger.info("Configuration updated and saved");
         }
         catch (error) {
-            logger.error('Error updating configuration:', error);
+            logger.error("Error updating configuration:", error);
             throw error;
         }
     }
@@ -222,7 +231,7 @@ export class PreventionConfigManager {
      * Get enabled rules
      */
     getEnabledRules() {
-        return this.config.rules.filter(rule => rule.enabled && this.config.enabled);
+        return this.config.rules.filter((rule) => rule.enabled && this.config.enabled);
     }
     /**
      * Get rules applicable to a file
@@ -230,7 +239,7 @@ export class PreventionConfigManager {
     getRulesForFile(filePath) {
         const extension = Utils.getFileExtension(filePath);
         const enabledRules = this.getEnabledRules();
-        return enabledRules.filter(rule => {
+        return enabledRules.filter((rule) => {
             // Check file extension condition
             if (rule.conditions?.fileExtensions) {
                 if (!rule.conditions.fileExtensions.includes(extension)) {
@@ -239,7 +248,7 @@ export class PreventionConfigManager {
             }
             // Check file pattern condition
             if (rule.conditions?.filePatterns) {
-                const matchesPattern = rule.conditions.filePatterns.some(pattern => filePath.includes(pattern));
+                const matchesPattern = rule.conditions.filePatterns.some((pattern) => filePath.includes(pattern));
                 if (!matchesPattern) {
                     return false;
                 }
@@ -249,10 +258,12 @@ export class PreventionConfigManager {
                 try {
                     const stats = fs.statSync(filePath);
                     const fileSize = stats.size;
-                    if (rule.conditions.minFileSize && fileSize < rule.conditions.minFileSize) {
+                    if (rule.conditions.minFileSize &&
+                        fileSize < rule.conditions.minFileSize) {
                         return false;
                     }
-                    if (rule.conditions.maxFileSize && fileSize > rule.conditions.maxFileSize) {
+                    if (rule.conditions.maxFileSize &&
+                        fileSize > rule.conditions.maxFileSize) {
                         return false;
                     }
                 }
@@ -269,10 +280,12 @@ export class PreventionConfigManager {
      */
     async addRule(rule) {
         // Validate the new rule
-        const ruleSchema = this.configSchema.extract('rules').extract('items');
+        const ruleSchema = this.configSchema
+            .extract("rules")
+            .extract("items");
         Utils.validateConfig(rule, ruleSchema);
         // Check if rule already exists
-        const existingIndex = this.config.rules.findIndex(r => r.id === rule.id);
+        const existingIndex = this.config.rules.findIndex((r) => r.id === rule.id);
         if (existingIndex >= 0) {
             this.config.rules[existingIndex] = rule;
         }
@@ -287,7 +300,7 @@ export class PreventionConfigManager {
      */
     async removeRule(ruleId) {
         const initialLength = this.config.rules.length;
-        this.config.rules = this.config.rules.filter(rule => rule.id !== ruleId);
+        this.config.rules = this.config.rules.filter((rule) => rule.id !== ruleId);
         if (this.config.rules.length < initialLength) {
             await this.saveConfig();
             logger.info(`Rule removed: ${ruleId}`);
@@ -299,11 +312,11 @@ export class PreventionConfigManager {
      * Enable/disable a rule
      */
     async toggleRule(ruleId, enabled) {
-        const rule = this.config.rules.find(r => r.id === ruleId);
+        const rule = this.config.rules.find((r) => r.id === ruleId);
         if (rule) {
             rule.enabled = enabled;
             await this.saveConfig();
-            logger.info(`Rule ${ruleId} ${enabled ? 'enabled' : 'disabled'}`);
+            logger.info(`Rule ${ruleId} ${enabled ? "enabled" : "disabled"}`);
             return true;
         }
         return false;
@@ -315,10 +328,12 @@ export class PreventionConfigManager {
         const enabledRules = this.getEnabledRules();
         const rulesByCategory = {};
         const rulesBySeverity = {};
-        this.config.rules.forEach(rule => {
-            rulesByCategory[rule.category] = (rulesByCategory[rule.category] || 0) + 1;
+        this.config.rules.forEach((rule) => {
+            rulesByCategory[rule.category] =
+                (rulesByCategory[rule.category] || 0) + 1;
             if (rule.enabled) {
-                rulesBySeverity[rule.severity] = (rulesBySeverity[rule.severity] || 0) + 1;
+                rulesBySeverity[rule.severity] =
+                    (rulesBySeverity[rule.severity] || 0) + 1;
             }
         });
         return {
@@ -336,7 +351,7 @@ export class PreventionConfigManager {
             await Utils.writeJsonFile(this.configPath, this.config);
         }
         catch (error) {
-            logger.error('Error saving configuration:', error);
+            logger.error("Error saving configuration:", error);
             throw error;
         }
     }
@@ -345,7 +360,7 @@ export class PreventionConfigManager {
      */
     async reloadConfig() {
         this.config = this.loadDefaultConfig();
-        logger.info('Configuration reloaded');
+        logger.info("Configuration reloaded");
     }
     /**
      * Export configuration for backup
@@ -364,7 +379,7 @@ export class PreventionConfigManager {
         }
         this.config = config;
         await this.saveConfig();
-        logger.info('Configuration imported successfully');
+        logger.info("Configuration imported successfully");
     }
 }
 /**

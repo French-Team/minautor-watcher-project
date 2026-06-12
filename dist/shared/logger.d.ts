@@ -1,4 +1,4 @@
-import winston from 'winston';
+import winston from "winston";
 declare const logger: winston.Logger;
 export default logger;
 export declare const createChildLogger: (moduleName: string) => winston.Logger;

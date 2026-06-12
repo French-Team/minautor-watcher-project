@@ -1,10 +1,19 @@
-import { CorrectorRegistry, createCorrectorRegistry } from './correctors.js';
-import { NotifierRegistry, createNotifierRegistry, NotificationUtils } from './notifiers.js';
-import { TriggerRuleManager, createTriggerRuleManager, TriggerContext, TriggerResult } from './rules.js';
-import { Utils } from '../shared/utils.js';
-import { createChildLogger } from '../shared/logger.js';
+import { CorrectorRegistry, createCorrectorRegistry } from "./correctors.js";
+import {
+  NotifierRegistry,
+  createNotifierRegistry,
+  NotificationUtils,
+} from "./notifiers.js";
+import {
+  TriggerRuleManager,
+  createTriggerRuleManager,
+  TriggerContext,
+  TriggerResult,
+} from "./rules.js";
+import { Utils } from "../shared/utils.js";
+import { createChildLogger } from "../shared/logger.js";
 
-const logger = createChildLogger('trigger');
+const logger = createChildLogger("trigger");
 
 /**
  * Trigger module configuration
@@ -42,7 +51,6 @@ export class TriggerModule {
     this.ruleManager = createTriggerRuleManager(config.configPath);
     this.correctorRegistry = createCorrectorRegistry();
     this.notifierRegistry = createNotifierRegistry();
-
   }
 
   /**
@@ -50,18 +58,17 @@ export class TriggerModule {
    */
   async start(): Promise<void> {
     if (this.isRunning) {
-      logger.warn('Trigger module is already running');
+      logger.warn("Trigger module is already running");
       return;
     }
 
     try {
-      logger.info('Starting trigger module...');
+      logger.info("Starting trigger module...");
 
       this.isRunning = true;
-      logger.info('Trigger module started successfully');
-
+      logger.info("Trigger module started successfully");
     } catch (error) {
-      logger.error('Failed to start trigger module:', error);
+      logger.error("Failed to start trigger module:", error);
       throw error;
     }
   }
@@ -71,18 +78,17 @@ export class TriggerModule {
    */
   async stop(): Promise<void> {
     if (!this.isRunning) {
-      logger.warn('Trigger module is not running');
+      logger.warn("Trigger module is not running");
       return;
     }
 
     try {
-      logger.info('Stopping trigger module...');
+      logger.info("Stopping trigger module...");
 
       this.isRunning = false;
-      logger.info('Trigger module stopped successfully');
-
+      logger.info("Trigger module stopped successfully");
     } catch (error) {
-      logger.error('Failed to stop trigger module:', error);
+      logger.error("Failed to stop trigger module:", error);
       throw error;
     }
   }
@@ -92,41 +98,50 @@ export class TriggerModule {
    */
   async processEvent(context: TriggerContext): Promise<TriggerResult[]> {
     if (!this.isRunning || !this.config.enabled) {
-      logger.debug('Trigger module is disabled or not running');
+      logger.debug("Trigger module is disabled or not running");
       return [];
     }
 
     try {
-      logger.info(`Processing trigger event: ${context.eventType} for ${context.filePath}`);
+      logger.info(
+        `Processing trigger event: ${context.eventType} for ${context.filePath}`
+      );
 
       // Get applicable rules for this context
       const applicableRules = this.ruleManager.getApplicableRules(context);
 
       if (applicableRules.length === 0) {
-        logger.debug(`No trigger rules applicable for event: ${context.eventType}`);
+        logger.debug(
+          `No trigger rules applicable for event: ${context.eventType}`
+        );
         return [];
       }
 
-      logger.info(`Executing ${applicableRules.length} trigger rules for ${context.eventType}`);
+      logger.info(
+        `Executing ${applicableRules.length} trigger rules for ${context.eventType}`
+      );
 
       // Execute rules
       const results = await this.executeRules(applicableRules, context);
 
       // Update cooldowns for executed rules
-      results.forEach(result => {
+      results.forEach((result) => {
         if (result.success && !result.skipped) {
           this.ruleManager.updateCooldown(result.ruleId);
         }
       });
 
       return results;
-
     } catch (error) {
       logger.error(`Error processing trigger event:`, error);
 
       // Send error notification if configured
       if (this.config.notifyOnFailure) {
-        await this.sendErrorNotification('Trigger Processing Error', error, context);
+        await this.sendErrorNotification(
+          "Trigger Processing Error",
+          error,
+          context
+        );
       }
 
       return [];
@@ -136,7 +151,10 @@ export class TriggerModule {
   /**
    * Execute multiple trigger rules
    */
-  private async executeRules(rules: any[], context: TriggerContext): Promise<TriggerResult[]> {
+  private async executeRules(
+    rules: any[],
+    context: TriggerContext
+  ): Promise<TriggerResult[]> {
     const results: TriggerResult[] = [];
 
     for (const rule of rules) {
@@ -149,7 +167,6 @@ export class TriggerModule {
         } else {
           logger.warn(`Trigger rule ${rule.id} failed`);
         }
-
       } catch (error) {
         logger.error(`Error executing trigger rule ${rule.id}:`, error);
         results.push({
@@ -168,7 +185,10 @@ export class TriggerModule {
   /**
    * Execute a single trigger rule
    */
-  private async executeRule(rule: any, context: TriggerContext): Promise<TriggerResult> {
+  private async executeRule(
+    rule: any,
+    context: TriggerContext
+  ): Promise<TriggerResult> {
     const startTime = Date.now();
     const result: TriggerResult = {
       ruleId: rule.id,
@@ -192,7 +212,6 @@ export class TriggerModule {
           if (!actionResult.success) {
             result.success = false;
           }
-
         } catch (error) {
           logger.error(`Error executing action ${action.type}:`, error);
           result.actions.push({
@@ -203,12 +222,11 @@ export class TriggerModule {
           result.success = false;
         }
       }
-
     } catch (error) {
       logger.error(`Error in trigger rule ${rule.id}:`, error);
       result.success = false;
       result.actions.push({
-        type: 'rule-execution',
+        type: "rule-execution",
         success: false,
         error: error instanceof Error ? error : new Error(String(error)),
       });
@@ -221,7 +239,10 @@ export class TriggerModule {
   /**
    * Execute a single action
    */
-  private async executeAction(action: any, context: TriggerContext): Promise<{
+  private async executeAction(
+    action: any,
+    context: TriggerContext
+  ): Promise<{
     type: string;
     success: boolean;
     result?: any;
@@ -229,19 +250,19 @@ export class TriggerModule {
   }> {
     try {
       switch (action.type) {
-        case 'correct':
+        case "correct":
           return await this.executeCorrection(action, context);
 
-        case 'notify':
+        case "notify":
           return await this.executeNotification(action, context);
 
-        case 'log':
+        case "log":
           return await this.executeLogging(action, context);
 
-        case 'skip':
+        case "skip":
           return await this.executeSkip(action, context);
 
-        case 'custom':
+        case "custom":
           return await this.executeCustomAction(action, context);
 
         default:
@@ -259,7 +280,10 @@ export class TriggerModule {
   /**
    * Execute correction action
    */
-  private async executeCorrection(action: any, context: TriggerContext): Promise<{
+  private async executeCorrection(
+    action: any,
+    context: TriggerContext
+  ): Promise<{
     type: string;
     success: boolean;
     result?: any;
@@ -267,9 +291,9 @@ export class TriggerModule {
   }> {
     if (!this.config.autoCorrect) {
       return {
-        type: 'correct',
+        type: "correct",
         success: true, // Skipped, not failed
-        result: 'Auto-correction disabled',
+        result: "Auto-correction disabled",
       };
     }
 
@@ -283,7 +307,7 @@ export class TriggerModule {
 
       if (!corrector.isEnabled()) {
         return {
-          type: 'correct',
+          type: "correct",
           success: true, // Skipped, not failed
           result: `Corrector ${correctorName} is disabled`,
         };
@@ -294,17 +318,16 @@ export class TriggerModule {
         context.error
       );
 
-      const success = correctionResults.every(result => result.success);
+      const success = correctionResults.every((result) => result.success);
 
       return {
-        type: 'correct',
+        type: "correct",
         success,
         result: correctionResults,
       };
-
     } catch (error) {
       return {
-        type: 'correct',
+        type: "correct",
         success: false,
         error: error instanceof Error ? error : new Error(String(error)),
       };
@@ -314,15 +337,18 @@ export class TriggerModule {
   /**
    * Execute notification action
    */
-  private async executeNotification(action: any, context: TriggerContext): Promise<{
+  private async executeNotification(
+    action: any,
+    context: TriggerContext
+  ): Promise<{
     type: string;
     success: boolean;
     result?: any;
     error?: Error;
   }> {
     try {
-      const channels = action.target.split(',').map((c: string) => c.trim());
-      const level = action.config?.level || 'info';
+      const channels = action.target.split(",").map((c: string) => c.trim());
+      const level = action.config?.level || "info";
 
       // Create notification data based on context
       let notificationData;
@@ -344,18 +370,20 @@ export class TriggerModule {
         );
       }
 
-      const results = await this.notifierRegistry.sendToChannels(channels, notificationData);
-      const success = results.every(result => result.success);
+      const results = await this.notifierRegistry.sendToChannels(
+        channels,
+        notificationData
+      );
+      const success = results.every((result) => result.success);
 
       return {
-        type: 'notify',
+        type: "notify",
         success,
         result: results,
       };
-
     } catch (error) {
       return {
-        type: 'notify',
+        type: "notify",
         success: false,
         error: error instanceof Error ? error : new Error(String(error)),
       };
@@ -365,14 +393,17 @@ export class TriggerModule {
   /**
    * Execute logging action
    */
-  private async executeLogging(action: any, context: TriggerContext): Promise<{
+  private async executeLogging(
+    action: any,
+    context: TriggerContext
+  ): Promise<{
     type: string;
     success: boolean;
     result?: any;
     error?: Error;
   }> {
     try {
-      const logLevel = action.config?.level || 'info';
+      const logLevel = action.config?.level || "info";
       const message = `Trigger rule executed: ${context.eventType} for ${context.filePath}`;
 
       logger.log(logLevel, message, {
@@ -382,14 +413,13 @@ export class TriggerModule {
       });
 
       return {
-        type: 'log',
+        type: "log",
         success: true,
         result: { level: logLevel, message },
       };
-
     } catch (error) {
       return {
-        type: 'log',
+        type: "log",
         success: false,
         error: error instanceof Error ? error : new Error(String(error)),
       };
@@ -399,7 +429,10 @@ export class TriggerModule {
   /**
    * Execute skip action
    */
-  private async executeSkip(action: any, context: TriggerContext): Promise<{
+  private async executeSkip(
+    action: any,
+    context: TriggerContext
+  ): Promise<{
     type: string;
     success: boolean;
     result?: any;
@@ -409,25 +442,28 @@ export class TriggerModule {
       // Check skip conditions
       if (action.config?.maxFileSize) {
         const stats = await Utils.fs.stat(context.filePath);
-        if (stats.size > action.config.maxFileSize) {
+        const maxSizeBytes = Utils.parseFileSize(action.config.maxFileSize);
+        if (stats.size > maxSizeBytes) {
           logger.info(`Skipping file ${context.filePath} due to size limit`);
           return {
-            type: 'skip',
+            type: "skip",
             success: true,
-            result: { reason: 'file-too-large', sizeLimit: action.config.maxFileSize },
+            result: {
+              reason: "file-too-large",
+              sizeLimit: action.config.maxFileSize,
+            },
           };
         }
       }
 
       return {
-        type: 'skip',
+        type: "skip",
         success: true,
-        result: { reason: 'skip-condition-met' },
+        result: { reason: "skip-condition-met" },
       };
-
     } catch (error) {
       return {
-        type: 'skip',
+        type: "skip",
         success: false,
         error: error instanceof Error ? error : new Error(String(error)),
       };
@@ -437,7 +473,10 @@ export class TriggerModule {
   /**
    * Execute custom action
    */
-  private async executeCustomAction(action: any, context: TriggerContext): Promise<{
+  private async executeCustomAction(
+    action: any,
+    context: TriggerContext
+  ): Promise<{
     type: string;
     success: boolean;
     result?: any;
@@ -447,24 +486,27 @@ export class TriggerModule {
       const handler = action.config?.handler;
       const script = action.config?.script;
 
-      if (handler && typeof handler === 'function') {
+      if (handler && typeof handler === "function") {
         const result = await handler(context);
-        return { type: 'custom', success: true, result };
+        return { type: "custom", success: true, result };
       }
 
-      if (script && typeof script === 'string') {
-        const { execSync } = await import('child_process');
-        const cmd = script.replace(/\{\{filePath\}\}/g, context.filePath)
+      if (script && typeof script === "string") {
+        const { execSync } = await import("child_process");
+        const cmd = script
+          .replace(/\{\{filePath\}\}/g, context.filePath)
           .replace(/\{\{eventType\}\}/g, context.eventType);
-        const output = execSync(cmd, { encoding: 'utf-8', timeout: 30000 });
+        const output = execSync(cmd, { encoding: "utf-8", timeout: 30000 });
         logger.info(`Custom script executed: ${script}`);
-        return { type: 'custom', success: true, result: output.trim() };
+        return { type: "custom", success: true, result: output.trim() };
       }
 
-      throw new Error('Custom action requires a config.handler function or config.script command');
+      throw new Error(
+        "Custom action requires a config.handler function or config.script command"
+      );
     } catch (error) {
       return {
-        type: 'custom',
+        type: "custom",
         success: false,
         error: error instanceof Error ? error : new Error(String(error)),
       };
@@ -474,7 +516,11 @@ export class TriggerModule {
   /**
    * Send error notification
    */
-  private async sendErrorNotification(title: string, error: any, context: TriggerContext): Promise<void> {
+  private async sendErrorNotification(
+    title: string,
+    error: any,
+    context: TriggerContext
+  ): Promise<void> {
     try {
       const notificationData = NotificationUtils.createErrorNotification(
         title,
@@ -488,7 +534,7 @@ export class TriggerModule {
 
       await this.notifierRegistry.sendToAll(notificationData);
     } catch (notificationError) {
-      logger.error('Failed to send error notification:', notificationError);
+      logger.error("Failed to send error notification:", notificationError);
     }
   }
 
@@ -522,7 +568,7 @@ export class TriggerModule {
    */
   async reloadConfig(): Promise<void> {
     await this.ruleManager.reloadConfig();
-    logger.info('Trigger configuration reloaded');
+    logger.info("Trigger configuration reloaded");
   }
 
   /**
@@ -550,14 +596,18 @@ export class TriggerModule {
 /**
  * Factory function to create a trigger module
  */
-export function createTriggerModule(config?: TriggerModuleConfig): TriggerModule {
+export function createTriggerModule(
+  config?: TriggerModuleConfig
+): TriggerModule {
   return new TriggerModule(config);
 }
 
 /**
  * Quick setup function for common use cases
  */
-export async function setupTrigger(config?: TriggerModuleConfig): Promise<TriggerModule> {
+export async function setupTrigger(
+  config?: TriggerModuleConfig
+): Promise<TriggerModule> {
   const module = createTriggerModule(config);
   await module.start();
   return module;

@@ -6,8 +6,8 @@ export interface PreventionRule {
     name: string;
     description: string;
     enabled: boolean;
-    severity: 'error' | 'warning' | 'info';
-    category: 'syntax' | 'style' | 'security' | 'performance' | 'custom';
+    severity: "error" | "warning" | "info";
+    category: "syntax" | "style" | "security" | "performance" | "custom";
     validators: string[];
     scripts: string[];
     conditions?: {

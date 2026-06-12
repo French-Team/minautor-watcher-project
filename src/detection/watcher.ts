@@ -1,20 +1,20 @@
-import chokidar from 'chokidar';
-import path from 'path';
-import EventEmitter from 'events';
-import { Utils, ConfigSchemas } from '../shared/utils.js';
-import { createChildLogger } from '../shared/logger.js';
+import chokidar from "chokidar";
+import path from "path";
+import EventEmitter from "events";
+import { Utils, ConfigSchemas } from "../shared/utils.js";
+import { createChildLogger } from "../shared/logger.js";
 
-const logger = createChildLogger('detection');
+const logger = createChildLogger("detection");
 
 /**
  * Custom events emitted by the watcher
  */
 export enum WatcherEvent {
-  FILE_ADDED = 'fileAdded',
-  FILE_CHANGED = 'fileChanged',
-  FILE_DELETED = 'fileDeleted',
-  WATCHER_READY = 'watcherReady',
-  WATCHER_ERROR = 'watcherError',
+  FILE_ADDED = "fileAdded",
+  FILE_CHANGED = "fileChanged",
+  FILE_DELETED = "fileDeleted",
+  WATCHER_READY = "watcherReady",
+  WATCHER_ERROR = "watcherError",
 }
 
 /**
@@ -51,7 +51,9 @@ export class Watcher extends EventEmitter {
 
       // Validate watch directory exists
       if (!(await Utils.pathExists(this.config.watchDir))) {
-        throw new Error(`Watch directory does not exist: ${this.config.watchDir}`);
+        throw new Error(
+          `Watch directory does not exist: ${this.config.watchDir}`
+        );
       }
 
       // Create ignore patterns
@@ -75,10 +77,9 @@ export class Watcher extends EventEmitter {
       // Set up event listeners
       this.setupEventListeners();
 
-      logger.info('Watcher started successfully');
-
+      logger.info("Watcher started successfully");
     } catch (error) {
-      logger.error('Failed to start watcher:', error);
+      logger.error("Failed to start watcher:", error);
       this.emit(WatcherEvent.WATCHER_ERROR, error);
       throw error;
     }
@@ -90,44 +91,45 @@ export class Watcher extends EventEmitter {
   async stop(): Promise<void> {
     try {
       if (this.watcher) {
-        logger.info('Stopping watcher...');
+        logger.info("Stopping watcher...");
 
         // Clear any pending processing timers
-        this.processingQueue.forEach(timeout => clearTimeout(timeout));
+        this.processingQueue.forEach((timeout) => clearTimeout(timeout));
         this.processingQueue.clear();
 
         await this.watcher.close();
         this.watcher = null;
 
-        logger.info('Watcher stopped successfully');
+        logger.info("Watcher stopped successfully");
       }
     } catch (error) {
-      logger.error('Error stopping watcher:', error);
+      logger.error("Error stopping watcher:", error);
       throw error;
     }
   }
 
   /**
-   * Create ignore patterns for Chokidar
+   * Create ignore patterns for Chokidar (glob strings)
    */
-  private createIgnorePatterns(): RegExp[] {
+  private createIgnorePatterns(): string[] {
     const defaultExclusions = [
-      '**/node_modules/**',
-      '**/.git/**',
-      '**/dist/**',
-      '**/build/**',
-      '**/*.log',
-      '**/.DS_Store',
+      "**/node_modules/**",
+      "**/.git/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/*.log",
+      "**/.DS_Store",
     ];
 
-    // Add configured exclusions
-    const customExclusions = this.config.excludedDirs.map(dir => `**/${dir}/**`);
+    const customExclusions = this.config.excludedDirs.map(
+      (dir) => `**/${dir}/**`
+    );
 
     const allPatterns = [...defaultExclusions, ...customExclusions];
 
-    logger.debug('Ignore patterns:', allPatterns);
+    logger.debug("Ignore patterns:", allPatterns);
 
-    return allPatterns.map(pattern => new RegExp(pattern));
+    return allPatterns;
   }
 
   /**
@@ -137,15 +139,21 @@ export class Watcher extends EventEmitter {
     if (!this.watcher) return;
 
     this.watcher
-      .on('add', (filePath) => this.handleFileEvent(WatcherEvent.FILE_ADDED, filePath))
-      .on('change', (filePath) => this.handleFileEvent(WatcherEvent.FILE_CHANGED, filePath))
-      .on('unlink', (filePath) => this.handleFileEvent(WatcherEvent.FILE_DELETED, filePath))
-      .on('ready', () => {
-        logger.info('Initial scan complete');
+      .on("add", (filePath) =>
+        this.handleFileEvent(WatcherEvent.FILE_ADDED, filePath)
+      )
+      .on("change", (filePath) =>
+        this.handleFileEvent(WatcherEvent.FILE_CHANGED, filePath)
+      )
+      .on("unlink", (filePath) =>
+        this.handleFileEvent(WatcherEvent.FILE_DELETED, filePath)
+      )
+      .on("ready", () => {
+        logger.info("Initial scan complete");
         this.emit(WatcherEvent.WATCHER_READY);
       })
-      .on('error', (error) => {
-        logger.error('Watcher error:', error);
+      .on("error", (error) => {
+        logger.error("Watcher error:", error);
         this.emit(WatcherEvent.WATCHER_ERROR, error);
       });
   }
@@ -235,9 +243,11 @@ export class Watcher extends EventEmitter {
 export function createWatcher(config: Partial<WatcherConfig> = {}): Watcher {
   const defaultConfig: WatcherConfig = {
     watchDir: process.env.WATCH_DIR || process.cwd(),
-    excludedDirs: (process.env.EXCLUDED_DIRS || '').split(',').filter(Boolean),
-    watchExtensions: (process.env.WATCH_EXTENSIONS || 'js,ts,jsx,tsx,json,md').split(','),
-    processingDelay: parseInt(process.env.PROCESSING_DELAY || '100'),
+    excludedDirs: (process.env.EXCLUDED_DIRS || "").split(",").filter(Boolean),
+    watchExtensions: (
+      process.env.WATCH_EXTENSIONS || "js,ts,jsx,tsx,json,md"
+    ).split(","),
+    processingDelay: parseInt(process.env.PROCESSING_DELAY || "100"),
     persistent: true,
     ignoreInitial: false,
   };

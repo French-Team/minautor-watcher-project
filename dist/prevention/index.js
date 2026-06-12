@@ -1,8 +1,8 @@
-import { createValidatorRegistry } from './validators.js';
-import { createScriptRunner } from './scripts.js';
-import { createPreventionConfig } from './config.js';
-import { createChildLogger } from '../shared/logger.js';
-const logger = createChildLogger('prevention');
+import { createValidatorRegistry, } from "./validators.js";
+import { createScriptRunner } from "./scripts.js";
+import { createPreventionConfig } from "./config.js";
+import { createChildLogger } from "../shared/logger.js";
+const logger = createChildLogger("prevention");
 /**
  * Main prevention module that orchestrates validation and script execution
  */
@@ -25,26 +25,24 @@ export class PreventionModule {
         this.configManager = createPreventionConfig(config.configPath);
         this.validatorRegistry = createValidatorRegistry();
         this.scriptRunner = createScriptRunner();
-        // Set up graceful shutdown
-        this.setupGracefulShutdown();
     }
     /**
      * Start the prevention module
      */
     async start() {
         if (this.isRunning) {
-            logger.warn('Prevention module is already running');
+            logger.warn("Prevention module is already running");
             return;
         }
         try {
-            logger.info('Starting prevention module...');
+            logger.info("Starting prevention module...");
             // Update component configurations
             await this.updateComponentConfigurations();
             this.isRunning = true;
-            logger.info('Prevention module started successfully');
+            logger.info("Prevention module started successfully");
         }
         catch (error) {
-            logger.error('Failed to start prevention module:', error);
+            logger.error("Failed to start prevention module:", error);
             throw error;
         }
     }
@@ -53,18 +51,18 @@ export class PreventionModule {
      */
     async stop() {
         if (!this.isRunning) {
-            logger.warn('Prevention module is not running');
+            logger.warn("Prevention module is not running");
             return;
         }
         try {
-            logger.info('Stopping prevention module...');
+            logger.info("Stopping prevention module...");
             // Stop all running scripts
             this.scriptRunner.stopAllScripts();
             this.isRunning = false;
-            logger.info('Prevention module stopped successfully');
+            logger.info("Prevention module stopped successfully");
         }
         catch (error) {
-            logger.error('Failed to stop prevention module:', error);
+            logger.error("Failed to stop prevention module:", error);
             throw error;
         }
     }
@@ -118,7 +116,7 @@ export class PreventionModule {
                     result.errors.push({
                         rule: rule.id,
                         message: `Rule processing failed: ${error.message}`,
-                        severity: 'error',
+                        severity: "error",
                     });
                     result.success = false;
                 }
@@ -129,9 +127,9 @@ export class PreventionModule {
                 for (const scriptResult of scriptResults) {
                     if (!scriptResult.success) {
                         result.errors.push({
-                            rule: scriptResult.error?.message || 'script-failed',
+                            rule: scriptResult.error?.message || "script-failed",
                             message: `Script execution failed: ${scriptResult.stderr}`,
-                            severity: 'error',
+                            severity: "error",
                         });
                         result.success = false;
                     }
@@ -141,14 +139,14 @@ export class PreventionModule {
                 const error = err instanceof Error ? err : new Error(String(err));
                 logger.error(`Error executing scripts for ${filePath}:`, error);
                 result.errors.push({
-                    rule: 'script-execution',
+                    rule: "script-execution",
                     message: `Script execution error: ${error.message}`,
-                    severity: 'error',
+                    severity: "error",
                 });
                 result.success = false;
             }
             result.executionTime = Date.now() - startTime;
-            logger.info(`Prevention processing completed for ${filePath}: ${result.success ? 'SUCCESS' : 'FAILED'} ` +
+            logger.info(`Prevention processing completed for ${filePath}: ${result.success ? "SUCCESS" : "FAILED"} ` +
                 `(${result.errors.length} errors, ${result.warnings.length} warnings) in ${result.executionTime}ms`);
         }
         catch (err) {
@@ -156,9 +154,9 @@ export class PreventionModule {
             logger.error(`Error in prevention processing for ${filePath}:`, error);
             result.success = false;
             result.errors.push({
-                rule: 'prevention-error',
+                rule: "prevention-error",
                 message: `Prevention processing failed: ${error.message}`,
-                severity: 'error',
+                severity: "error",
             });
             result.executionTime = Date.now() - startTime;
         }
@@ -180,14 +178,14 @@ export class PreventionModule {
                         errors.push({
                             rule: `${rule.id}:${err.rule}`,
                             message: err.message,
-                            severity: err.severity || 'error',
+                            severity: err.severity || "error",
                         });
                     }
                     for (const warning of validationResult.warnings) {
                         warnings.push({
                             rule: `${rule.id}:${warning.rule}`,
                             message: warning.message,
-                            severity: warning.severity || 'warning',
+                            severity: warning.severity || "warning",
                         });
                     }
                 }
@@ -197,7 +195,7 @@ export class PreventionModule {
                     errors.push({
                         rule: `${rule.id}:${validatorName}`,
                         message: `Validator failed: ${error.message}`,
-                        severity: 'error',
+                        severity: "error",
                     });
                 }
             }
@@ -224,18 +222,6 @@ export class PreventionModule {
         }
     }
     /**
-     * Set up graceful shutdown handlers
-     */
-    setupGracefulShutdown() {
-        const shutdown = async () => {
-            logger.info('Received shutdown signal, stopping prevention module...');
-            await this.stop();
-            process.exit(0);
-        };
-        process.on('SIGINT', shutdown);
-        process.on('SIGTERM', shutdown);
-    }
-    /**
      * Get current status
      */
     getStatus() {
@@ -256,7 +242,7 @@ export class PreventionModule {
     async reloadConfig() {
         await this.configManager.reloadConfig();
         await this.updateComponentConfigurations();
-        logger.info('Configuration reloaded');
+        logger.info("Configuration reloaded");
     }
     /**
      * Add a custom rule

@@ -1,11 +1,14 @@
-import fs from 'fs-extra';
-import path from 'path';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { Utils } from '../shared/utils.js';
-import { createChildLogger } from '../shared/logger.js';
+import fs from "fs-extra";
+import path from "path";
+import { exec } from "child_process";
+import { promisify } from "util";
+import { Utils } from "../shared/utils.js";
+import { createChildLogger } from "../shared/logger.js";
 const execAsync = promisify(exec);
-const logger = createChildLogger('trigger-correctors');
+const logger = createChildLogger("trigger-correctors");
+function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 /**
  * Base corrector class
  */
@@ -55,7 +58,7 @@ export class TextReplacementCorrector extends BaseCorrector {
         // Check file pattern condition
         if (this.config.conditions.filePatterns) {
             const fileName = path.basename(filePath);
-            const matchesPattern = this.config.conditions.filePatterns.some(pattern => fileName.includes(pattern));
+            const matchesPattern = this.config.conditions.filePatterns.some((pattern) => fileName.includes(pattern));
             if (!matchesPattern) {
                 return false;
             }
@@ -73,13 +76,13 @@ export class TextReplacementCorrector extends BaseCorrector {
         try {
             logger.info(`Applying text replacement corrections to ${filePath}`);
             // Read original content
-            const originalContent = await fs.readFile(filePath, 'utf-8');
+            const originalContent = await fs.readFile(filePath, "utf-8");
             result.originalContent = originalContent;
             let correctedContent = originalContent;
             let hasChanges = false;
             // Apply each action
             for (const action of this.config.actions) {
-                if (action.type === 'replace') {
+                if (action.type === "replace") {
                     const changes = this.applyTextReplacement(correctedContent, action);
                     if (changes.modified) {
                         correctedContent = changes.content;
@@ -87,7 +90,7 @@ export class TextReplacementCorrector extends BaseCorrector {
                         result.changes.push(...changes.details);
                     }
                 }
-                else if (action.type === 'insert') {
+                else if (action.type === "insert") {
                     const changes = this.applyTextInsertion(correctedContent, action);
                     if (changes.modified) {
                         correctedContent = changes.content;
@@ -95,7 +98,7 @@ export class TextReplacementCorrector extends BaseCorrector {
                         result.changes.push(...changes.details);
                     }
                 }
-                else if (action.type === 'delete') {
+                else if (action.type === "delete") {
                     const changes = this.applyTextDeletion(correctedContent, action);
                     if (changes.modified) {
                         correctedContent = changes.content;
@@ -125,21 +128,21 @@ export class TextReplacementCorrector extends BaseCorrector {
     }
     applyTextReplacement(content, action) {
         const details = [];
-        if (action.target === 'all') {
+        if (action.target === "all") {
             // Replace all occurrences
-            const regex = new RegExp(action.content, 'g');
-            const newContent = content.replace(regex, action.newContent || '');
+            const regex = new RegExp(escapeRegex(action.content), "g");
+            const newContent = content.replace(regex, action.newContent || "");
             if (newContent !== content) {
                 // Calculate approximate line/column for the change
-                const lines = content.split('\n');
+                const lines = content.split("\n");
                 for (let i = 0; i < lines.length; i++) {
                     if (lines[i].includes(action.content)) {
                         details.push({
-                            type: 'replace',
+                            type: "replace",
                             line: i + 1,
                             column: lines[i].indexOf(action.content) + 1,
                             oldText: action.content,
-                            newText: action.newText || '',
+                            newText: action.newText || "",
                         });
                     }
                 }
@@ -150,16 +153,72 @@ export class TextReplacementCorrector extends BaseCorrector {
                 details,
             };
         }
-        // TODO: Implement line-specific replacements
         return { modified: false, content, details };
     }
     applyTextInsertion(content, action) {
-        // TODO: Implement text insertion
-        return { modified: false, content, details: [] };
+        const details = [];
+        const lines = content.split("\n");
+        let targetLine = action.target;
+        if (targetLine === "end") {
+            targetLine = lines.length;
+        }
+        if (typeof targetLine === "number" &&
+            targetLine >= 0 &&
+            targetLine <= lines.length) {
+            const insertContent = action.content || "";
+            lines.splice(targetLine, 0, insertContent);
+            details.push({
+                type: "insert",
+                line: targetLine,
+                column: 0,
+                newText: insertContent,
+            });
+        }
+        return {
+            modified: details.length > 0,
+            content: lines.join("\n"),
+            details,
+        };
     }
     applyTextDeletion(content, action) {
-        // TODO: Implement text deletion
-        return { modified: false, content, details: [] };
+        const details = [];
+        const lines = content.split("\n");
+        if (action.target === "all" && action.content) {
+            const searchStr = action.content;
+            const escaped = escapeRegex(searchStr);
+            const regex = new RegExp(escaped, "g");
+            let match;
+            while ((match = regex.exec(content)) !== null) {
+                const lineNum = content.substring(0, match.index).split("\n").length;
+                details.push({
+                    type: "delete",
+                    line: lineNum,
+                    column: match.index,
+                    oldText: match[0],
+                });
+            }
+            return {
+                modified: details.length > 0,
+                content: content.replace(regex, ""),
+                details,
+            };
+        }
+        if (typeof action.target === "number" &&
+            action.target >= 0 &&
+            action.target < lines.length) {
+            const deletedLine = lines.splice(action.target, 1)[0];
+            details.push({
+                type: "delete",
+                line: action.target,
+                column: 0,
+                oldText: deletedLine,
+            });
+        }
+        return {
+            modified: details.length > 0,
+            content: lines.join("\n"),
+            details,
+        };
     }
 }
 /**
@@ -170,7 +229,7 @@ export class CommandCorrector extends BaseCorrector {
         if (!this.isEnabled())
             return false;
         // Check if any action is a command execution
-        return this.config.actions.some(action => action.type === 'run-command');
+        return this.config.actions.some((action) => action.type === "run-command");
     }
     async applyCorrection(filePath, error) {
         const startTime = Date.now();
@@ -184,16 +243,16 @@ export class CommandCorrector extends BaseCorrector {
             logger.info(`Executing command corrections for ${filePath}`);
             // Execute each command action
             for (const action of this.config.actions) {
-                if (action.type === 'run-command') {
+                if (action.type === "run-command") {
                     const commandResult = await this.executeCommand(action, filePath);
                     if (commandResult.success) {
                         result.corrected = true;
                         result.changes.push({
-                            type: 'replace',
+                            type: "replace",
                             line: 0,
                             column: 0,
-                            oldText: 'file-content',
-                            newText: 'corrected-by-command',
+                            oldText: "file-content",
+                            newText: "corrected-by-command",
                         });
                         logger.info(`Command correction successful: ${action.command}`);
                     }
@@ -218,8 +277,8 @@ export class CommandCorrector extends BaseCorrector {
             const command = action.command;
             const args = action.args || [];
             const cwd = path.dirname(filePath);
-            logger.debug(`Executing command: ${command} ${args.join(' ')} in ${cwd}`);
-            const { stdout, stderr } = await execAsync(`${command} ${args.join(' ')}`, { cwd });
+            logger.debug(`Executing command: ${command} ${args.join(" ")} in ${cwd}`);
+            const { stdout, stderr } = await execAsync(`${command} ${args.join(" ")}`, { cwd });
             if (stderr) {
                 logger.warn(`Command stderr: ${stderr}`);
             }
@@ -244,7 +303,7 @@ export class ESLintFixCorrector extends BaseCorrector {
         if (!this.isEnabled())
             return false;
         const extension = Utils.getFileExtension(filePath);
-        return ['js', 'ts', 'jsx', 'tsx'].includes(extension);
+        return ["js", "ts", "jsx", "tsx"].includes(extension);
     }
     async applyCorrection(filePath, error) {
         const startTime = Date.now();
@@ -257,7 +316,7 @@ export class ESLintFixCorrector extends BaseCorrector {
         try {
             logger.info(`Running ESLint auto-fix on ${filePath}`);
             const { stdout, stderr } = await execAsync(`npx eslint --fix "${filePath}"`);
-            result.corrected = !stderr || !stderr.includes('error');
+            result.corrected = !stderr || !stderr.includes("error");
             result.success = true;
             if (stderr) {
                 logger.warn(`ESLint stderr: ${stderr}`);
@@ -267,7 +326,7 @@ export class ESLintFixCorrector extends BaseCorrector {
             }
             // Read the corrected content
             if (result.corrected) {
-                result.correctedContent = await fs.readFile(filePath, 'utf-8');
+                result.correctedContent = await fs.readFile(filePath, "utf-8");
             }
         }
         catch (error) {
@@ -289,7 +348,7 @@ export class PrettierFormatCorrector extends BaseCorrector {
         if (!this.isEnabled())
             return false;
         const extension = Utils.getFileExtension(filePath);
-        return ['js', 'ts', 'jsx', 'tsx', 'json', 'md', 'css', 'scss'].includes(extension);
+        return ["js", "ts", "jsx", "tsx", "json", "md", "css", "scss"].includes(extension);
     }
     async applyCorrection(filePath, error) {
         const startTime = Date.now();
@@ -311,7 +370,7 @@ export class PrettierFormatCorrector extends BaseCorrector {
                 logger.debug(`Prettier output: ${stdout}`);
             }
             // Read the formatted content
-            result.correctedContent = await fs.readFile(filePath, 'utf-8');
+            result.correctedContent = await fs.readFile(filePath, "utf-8");
         }
         catch (error) {
             logger.error(`Prettier format failed for ${filePath}:`, error);
@@ -350,7 +409,7 @@ export class CorrectorRegistry {
      */
     getApplicableCorrectors(filePath, error) {
         return this.getAll()
-            .filter(corrector => corrector.canCorrect(filePath, error))
+            .filter((corrector) => corrector.canCorrect(filePath, error))
             .sort((a, b) => b.getPriority() - a.getPriority()); // Sort by priority (highest first)
     }
     /**
@@ -388,42 +447,42 @@ export class CorrectorRegistry {
 export function createCorrectorRegistry() {
     const registry = new CorrectorRegistry();
     // Register default correctors
-    registry.register('eslint-fix', new ESLintFixCorrector({
-        id: 'eslint-fix',
-        name: 'ESLint Auto Fix',
-        description: 'Automatically fix ESLint errors',
+    registry.register("eslint-fix", new ESLintFixCorrector({
+        id: "eslint-fix",
+        name: "ESLint Auto Fix",
+        description: "Automatically fix ESLint errors",
         enabled: true,
         priority: 10,
         conditions: {
-            fileExtensions: ['js', 'ts', 'jsx', 'tsx'],
+            fileExtensions: ["js", "ts", "jsx", "tsx"],
         },
         actions: [],
     }));
-    registry.register('prettier-format', new PrettierFormatCorrector({
-        id: 'prettier-format',
-        name: 'Prettier Format',
-        description: 'Format code with Prettier',
+    registry.register("prettier-format", new PrettierFormatCorrector({
+        id: "prettier-format",
+        name: "Prettier Format",
+        description: "Format code with Prettier",
         enabled: true,
         priority: 5,
         conditions: {
-            fileExtensions: ['js', 'ts', 'jsx', 'tsx', 'json', 'md', 'css', 'scss'],
+            fileExtensions: ["js", "ts", "jsx", "tsx", "json", "md", "css", "scss"],
         },
         actions: [],
     }));
     // Text replacement corrector for common patterns
-    registry.register('text-replacement', new TextReplacementCorrector({
-        id: 'text-replacement',
-        name: 'Text Replacement',
-        description: 'Apply text-based corrections',
+    registry.register("text-replacement", new TextReplacementCorrector({
+        id: "text-replacement",
+        name: "Text Replacement",
+        description: "Apply text-based corrections",
         enabled: true,
         priority: 1,
         conditions: {},
         actions: [
             {
-                type: 'replace',
-                target: 'all',
-                content: 'console.log(',
-                newText: 'logger.info(',
+                type: "replace",
+                target: "all",
+                content: "",
+                newText: "logger.info(",
             },
         ],
     }));
