@@ -11,6 +11,19 @@ import {
   validateConfig,
 } from "../shared/config-schema.js";
 import logger from "../shared/logger.js";
+import {
+  checkInjectionStatus,
+  injectFiles,
+  formatCheckResult,
+  formatInjectionResults,
+} from "../injection/index.js";
+import type { AgentType, InjectionResult } from "../injection/types.js";
+import {
+  analyzeProject,
+  formatAnalysis,
+  evaluateRules,
+  formatEvaluations,
+} from "../analysis/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = fs.readJsonSync(path.join(__dirname, "../../package.json"));
@@ -46,6 +59,8 @@ export class WatcherCLI {
     this.setupConfigCommand();
     this.setupTestAllCommand();
     this.setupPreviewCommand();
+    this.setupScanCommand();
+    this.setupAnalyzeCommand();
   }
 
   private setupStartCommand(): void {
@@ -579,6 +594,384 @@ export class WatcherCLI {
           }
         } catch (error) {
           console.error(chalk.red("✖") + " Error in pipeline test:", error);
+          process.exit(1);
+        }
+      });
+  }
+
+  /**
+   * Scan command — one-shot: detect, fix, inject, then exit
+   */
+  private setupScanCommand(): void {
+    this.program
+      .command("scan")
+      .description(
+        "One-shot scan: detect issues, fix errors, inject consignment files"
+      )
+      .option("-d, --dir <directory>", "Directory to scan", process.cwd())
+      .option("--fix", "Auto-fix detected errors")
+      .option("--inject", "Inject missing consignment files")
+      .option("--all", "Enable both --fix and --inject")
+      .option("--dry-run", "Show what would be done without modifying files")
+      .option("--report <file>", "Generate a JSON report to file")
+      .option(
+        "--agents <agents>",
+        "Comma-separated agent types to inject (claude,generic,copilot,cursor,windsurf)"
+      )
+      .action(async (options) => {
+        try {
+          const scanDir = path.resolve(options.dir);
+          const doFix = options.all || options.fix;
+          const doInject = options.all || options.inject;
+          const dryRun = options.dryRun;
+          const reportPath = options.report;
+
+          const agents: AgentType[] | undefined = options.agents
+            ? (options.agents
+                .split(",")
+                .map((a: string) => a.trim()) as AgentType[])
+            : undefined;
+
+          console.log(chalk.bold("\n🔍 Watcher Scan\n"));
+          console.log(chalk.gray("  Directory: ") + chalk.cyan(scanDir));
+          console.log(
+            chalk.gray("  Fix:       ") +
+              (doFix ? chalk.green("ON") : chalk.red("OFF"))
+          );
+          console.log(
+            chalk.gray("  Inject:    ") +
+              (doInject ? chalk.green("ON") : chalk.red("OFF"))
+          );
+          if (dryRun) {
+            console.log(chalk.gray("  Mode:      ") + chalk.yellow("DRY-RUN"));
+          }
+          console.log();
+
+          interface ScanReport {
+            timestamp: string;
+            directory: string;
+            options: { doFix: boolean; doInject: boolean; dryRun: boolean };
+            analysis: unknown;
+            injection: unknown;
+            corrections: unknown;
+            adaptiveRules: unknown;
+            summary: {
+              filesScanned: number;
+              issuesFound: number;
+              fixesApplied: number;
+              injected: number;
+              rulesTriggered: number;
+            };
+          }
+
+          const report: ScanReport = {
+            timestamp: new Date().toISOString(),
+            directory: scanDir,
+            options: { doFix, doInject, dryRun },
+            analysis: null,
+            injection: null,
+            corrections: null,
+            adaptiveRules: null,
+            summary: {
+              filesScanned: 0,
+              issuesFound: 0,
+              fixesApplied: 0,
+              injected: 0,
+              rulesTriggered: 0,
+            },
+          };
+
+          // Step 0: Project analysis
+          console.log(chalk.blue("0.") + chalk.bold(" Analyzing project..."));
+          const analysisStart = Date.now();
+          const analysis = await analyzeProject(scanDir);
+          const analysisEvals = evaluateRules(analysis);
+          const triggeredRules = analysisEvals.filter((e) => e.triggered);
+
+          report.analysis = analysis;
+          report.adaptiveRules = triggeredRules;
+          report.summary.rulesTriggered = triggeredRules.length;
+
+          console.log(
+            chalk.gray(
+              `   ${analysis.language}, ${analysis.packageManager}, ${triggeredRules.length} rules triggered`
+            )
+          );
+          console.log(
+            chalk.gray(`   Done in ${Date.now() - analysisStart}ms\n`)
+          );
+
+          // Step 1: Injection check
+          if (doInject || !doFix) {
+            console.log(
+              chalk.blue("1.") + chalk.bold(" Checking consignment files...")
+            );
+            const injStart = Date.now();
+
+            const injResult = await checkInjectionStatus({
+              projectDir: scanDir,
+              agents,
+            });
+
+            console.log(formatCheckResult(injResult));
+            console.log(chalk.gray(`   Done in ${Date.now() - injStart}ms\n`));
+
+            report.injection = injResult;
+
+            // Step 2: Inject if requested
+            if (doInject && injResult.missingCount > 0) {
+              console.log(
+                chalk.blue("2.") + chalk.bold(" Injecting consignment files...")
+              );
+              const injectStart = Date.now();
+
+              const injectResult = await injectFiles({
+                projectDir: scanDir,
+                agents,
+                force: false,
+                dryRun,
+              });
+
+              console.log(formatInjectionResults(injectResult));
+              console.log(
+                chalk.gray(`   Done in ${Date.now() - injectStart}ms\n`)
+              );
+
+              report.corrections = injectResult;
+              report.summary.injected = injectResult.filter(
+                (r: InjectionResult) =>
+                  r.action === "created" || r.action === "updated"
+              ).length;
+            }
+          }
+
+          // Step 3: File scanning + prevention
+          if (doFix) {
+            console.log(
+              chalk.blue(doInject ? "3." : "2.") +
+                chalk.bold(" Scanning files for errors...")
+            );
+            const scanStart = Date.now();
+
+            const service = new WatcherService({ watchDir: scanDir });
+            await service.initialize();
+
+            const preventionModule = service.getPreventionModule();
+            const triggerModule = service.getTriggerModule();
+
+            // Scan for relevant files
+            const extensions = [".ts", ".js", ".json", ".yaml", ".yml"];
+            const files = await this.findFiles(scanDir, extensions);
+
+            report.summary.filesScanned = files.length;
+            let issuesFound = 0;
+            let fixesApplied = 0;
+
+            for (const file of files) {
+              try {
+                // Prevention check
+                if (preventionModule) {
+                  const result = await preventionModule.processFile(file);
+                  if (result && !result.success) {
+                    issuesFound++;
+                    if (result.errors) {
+                      issuesFound += result.errors.length;
+                    }
+                  }
+                }
+
+                // Trigger (correction) if requested
+                if (doFix && triggerModule) {
+                  const triggerResult = await triggerModule.processEvent({
+                    filePath: file,
+                    eventType: "fileDetected",
+                    metadata: {},
+                    timestamp: new Date(),
+                  });
+
+                  if (triggerResult) {
+                    for (const tr of triggerResult) {
+                      if (tr.success) {
+                        fixesApplied++;
+                      }
+                    }
+                  }
+                }
+              } catch {
+                // Skip files that can't be processed
+              }
+            }
+
+            report.summary.issuesFound = issuesFound;
+            report.summary.fixesApplied = fixesApplied;
+
+            console.log(
+              chalk.gray(
+                `   Scanned ${files.length} files in ${
+                  Date.now() - scanStart
+                }ms`
+              )
+            );
+            console.log(
+              chalk.gray(`   Issues: `) +
+                (issuesFound > 0
+                  ? chalk.red(String(issuesFound))
+                  : chalk.green("0"))
+            );
+            if (doFix) {
+              console.log(
+                chalk.gray(`   Fixes:  `) +
+                  (fixesApplied > 0
+                    ? chalk.green(String(fixesApplied))
+                    : chalk.gray("0"))
+              );
+            }
+            console.log();
+
+            await service.stop();
+          }
+
+          // Summary
+          console.log(chalk.bold("Summary\n"));
+          console.log(
+            chalk.gray("  Files scanned:    ") +
+              chalk.cyan(String(report.summary.filesScanned))
+          );
+          console.log(
+            chalk.gray("  Issues found:     ") +
+              (report.summary.issuesFound > 0
+                ? chalk.red(String(report.summary.issuesFound))
+                : chalk.green("0"))
+          );
+          if (doFix) {
+            console.log(
+              chalk.gray("  Fixes applied:    ") +
+                chalk.green(String(report.summary.fixesApplied))
+            );
+          }
+          if (doInject) {
+            console.log(
+              chalk.gray("  Files injected:   ") +
+                chalk.green(String(report.summary.injected))
+            );
+          }
+          console.log(
+            chalk.gray("  Rules triggered:  ") +
+              chalk.yellow(String(report.summary.rulesTriggered))
+          );
+          console.log();
+
+          // Write report
+          if (reportPath) {
+            await fs.writeJson(reportPath, report, { spaces: 2 });
+            console.log(
+              chalk.gray("  Report written: ") + chalk.cyan(reportPath)
+            );
+            console.log();
+          }
+        } catch (error) {
+          console.error(
+            chalk.red("✖") +
+              " Scan failed: " +
+              (error instanceof Error ? error.message : String(error))
+          );
+          process.exit(1);
+        }
+      });
+  }
+
+  /**
+   * Find files matching given extensions recursively
+   */
+  private async findFiles(
+    dir: string,
+    extensions: string[]
+  ): Promise<string[]> {
+    const results: string[] = [];
+    const excludeDirs = ["node_modules", ".git", "dist", "build", ".next"];
+
+    try {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (!excludeDirs.includes(entry.name)) {
+            const subFiles = await this.findFiles(fullPath, extensions);
+            results.push(...subFiles);
+          }
+        } else if (extensions.some((ext) => entry.name.endsWith(ext))) {
+          results.push(fullPath);
+        }
+      }
+    } catch {
+      // Skip directories we can't read
+    }
+
+    return results;
+  }
+
+  /**
+   * Analyze command — analyze project structure and evaluate adaptive rules
+   */
+  private setupAnalyzeCommand(): void {
+    this.program
+      .command("analyze")
+      .description("Analyze project structure and evaluate adaptive rules")
+      .option("-d, --dir <directory>", "Directory to analyze", process.cwd())
+      .option("--json", "Output as JSON")
+      .option("--rules-only", "Show only rule evaluations")
+      .action(async (options) => {
+        try {
+          const projectDir = path.resolve(options.dir);
+
+          console.log(chalk.bold("\n📊 Project Analysis\n"));
+          console.log(chalk.gray("  Directory: ") + chalk.cyan(projectDir));
+          console.log();
+
+          const analysis = await analyzeProject(projectDir);
+
+          if (options.json) {
+            console.log(JSON.stringify(analysis, null, 2));
+            return;
+          }
+
+          if (!options.rulesOnly) {
+            console.log(formatAnalysis(analysis));
+            console.log();
+          }
+
+          // Evaluate adaptive rules
+          const evaluations = evaluateRules(analysis);
+          const triggered = evaluations.filter((e) => e.triggered);
+
+          console.log(chalk.bold("Adaptive Rules\n"));
+          console.log(formatEvaluations(evaluations));
+          console.log();
+
+          // Summary
+          const enforced = triggered.filter((e) => e.action === "enforce");
+          const suggested = triggered.filter((e) => e.action === "suggest");
+
+          console.log(chalk.bold("Summary\n"));
+          console.log(
+            chalk.gray("  Enforced rules:  ") +
+              chalk.yellow(String(enforced.length))
+          );
+          console.log(
+            chalk.gray("  Suggested rules: ") +
+              chalk.cyan(String(suggested.length))
+          );
+          console.log(
+            chalk.gray("  Total triggered: ") +
+              chalk.green(String(triggered.length))
+          );
+          console.log();
+        } catch (error) {
+          console.error(
+            chalk.red("✖") +
+              " Analysis failed: " +
+              (error instanceof Error ? error.message : String(error))
+          );
           process.exit(1);
         }
       });
