@@ -29,7 +29,7 @@ export interface PreventionRule {
     notifyOnFailure?: boolean;
     blockCommit?: boolean;
   };
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -46,11 +46,11 @@ export interface PreventionConfig {
   };
   customValidators?: Array<{
     name: string;
-    config: any;
+    config: Record<string, unknown>;
   }>;
   customScripts?: Array<{
     name: string;
-    config: any;
+    config: Record<string, unknown>;
   }>;
 }
 
@@ -58,11 +58,11 @@ export interface PreventionConfig {
  * Configuration manager for prevention module
  */
 export class PreventionConfigManager {
-  private config: PreventionConfig;
+  private config!: PreventionConfig;
   private configPath: string;
   private configSchema: Joi.ObjectSchema;
 
-  constructor(configPath?: string) {
+  private constructor(configPath?: string) {
     this.configPath =
       configPath || path.join(process.cwd(), "config", "prevention-rules.json");
 
@@ -105,20 +105,26 @@ export class PreventionConfigManager {
         parallelExecution: Joi.boolean().default(true),
       }).default(),
     });
+  }
 
-    // Load initial configuration
-    this.config = this.loadDefaultConfig();
+  /**
+   * Create and initialize a PreventionConfigManager (async factory)
+   */
+  static async create(configPath?: string): Promise<PreventionConfigManager> {
+    const manager = new PreventionConfigManager(configPath);
+    manager.config = await manager.loadDefaultConfig();
+    return manager;
   }
 
   /**
    * Load configuration from file or use defaults
    */
-  private loadDefaultConfig(): PreventionConfig {
+  private async loadDefaultConfig(): Promise<PreventionConfig> {
     try {
-      if (fs.pathExistsSync(this.configPath)) {
-        const fileConfig = fs.readJsonSync(
+      if (await fs.pathExists(this.configPath)) {
+        const fileConfig = (await fs.readJson(
           this.configPath
-        ) as Partial<PreventionConfig>;
+        )) as Partial<PreventionConfig>;
         if (fileConfig) {
           const { error, value } = this.configSchema.validate(fileConfig, {
             allowUnknown: true,
@@ -306,55 +312,56 @@ export class PreventionConfigManager {
   /**
    * Get rules applicable to a file
    */
-  getRulesForFile(filePath: string): PreventionRule[] {
+  async getRulesForFile(filePath: string): Promise<PreventionRule[]> {
     const extension = Utils.getFileExtension(filePath);
     const enabledRules = this.getEnabledRules();
 
-    return enabledRules.filter((rule) => {
-      // Check file extension condition
+    const applicableRules: PreventionRule[] = [];
+
+    for (const rule of enabledRules) {
       if (rule.conditions?.fileExtensions) {
         if (!rule.conditions.fileExtensions.includes(extension)) {
-          return false;
+          continue;
         }
       }
 
-      // Check file pattern condition
       if (rule.conditions?.filePatterns) {
         const matchesPattern = rule.conditions.filePatterns.some((pattern) =>
           filePath.includes(pattern)
         );
         if (!matchesPattern) {
-          return false;
+          continue;
         }
       }
 
-      // Check file size conditions
       if (rule.conditions?.minFileSize || rule.conditions?.maxFileSize) {
         try {
-          const stats = fs.statSync(filePath);
+          const stats = await fs.stat(filePath);
           const fileSize = stats.size;
 
           if (
             rule.conditions.minFileSize &&
             fileSize < rule.conditions.minFileSize
           ) {
-            return false;
+            continue;
           }
 
           if (
             rule.conditions.maxFileSize &&
             fileSize > rule.conditions.maxFileSize
           ) {
-            return false;
+            continue;
           }
         } catch (error) {
           logger.warn(`Could not check file size for ${filePath}:`, error);
-          return false;
+          continue;
         }
       }
 
-      return true;
-    });
+      applicableRules.push(rule);
+    }
+
+    return applicableRules;
   }
 
   /**
@@ -478,7 +485,7 @@ export class PreventionConfigManager {
    * Reload configuration from file
    */
   async reloadConfig(): Promise<void> {
-    this.config = this.loadDefaultConfig();
+    this.config = await this.loadDefaultConfig();
     logger.info("Configuration reloaded");
   }
 
@@ -506,12 +513,12 @@ export class PreventionConfigManager {
 }
 
 /**
- * Create a prevention configuration manager
+ * Create a prevention configuration manager (async factory)
  */
-export function createPreventionConfig(
+export async function createPreventionConfig(
   configPath?: string
-): PreventionConfigManager {
-  return new PreventionConfigManager(configPath);
+): Promise<PreventionConfigManager> {
+  return PreventionConfigManager.create(configPath);
 }
 
 export default PreventionConfigManager;

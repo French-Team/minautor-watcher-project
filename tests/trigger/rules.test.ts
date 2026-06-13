@@ -1,8 +1,18 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "@jest/globals";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+} from "@jest/globals";
 import fs from "fs-extra";
 import path from "path";
 import os from "os";
-import { TriggerRuleManager, createTriggerRuleManager } from "../../src/trigger/rules.js";
+import {
+  TriggerRuleManager,
+  createTriggerRuleManager,
+} from "../../src/trigger/rules.js";
 
 const TEST_DIR = path.join(os.tmpdir(), "watcher-test-rules");
 
@@ -137,7 +147,9 @@ describe("TriggerRuleManager", () => {
       };
       const applicable = manager.getApplicableRules(context);
       for (let i = 1; i < applicable.length; i++) {
-        expect(applicable[i - 1].priority).toBeGreaterThanOrEqual(applicable[i].priority);
+        expect(applicable[i - 1].priority).toBeGreaterThanOrEqual(
+          applicable[i].priority
+        );
       }
     });
   });
@@ -198,7 +210,9 @@ describe("TriggerRuleManager", () => {
       });
       const removed = await manager.removeRule("remove-me");
       expect(removed).toBe(true);
-      expect(manager.getRules().find((r) => r.id === "remove-me")).toBeUndefined();
+      expect(
+        manager.getRules().find((r) => r.id === "remove-me")
+      ).toBeUndefined();
     });
 
     it("should return false for non-existent rule", async () => {

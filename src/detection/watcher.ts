@@ -27,6 +27,7 @@ export interface WatcherConfig {
   processingDelay: number;
   persistent: boolean;
   ignoreInitial: boolean;
+  maxQueueSize?: number;
 }
 
 /**
@@ -36,10 +37,12 @@ export class Watcher extends EventEmitter {
   private watcher: chokidar.FSWatcher | null = null;
   private config: WatcherConfig;
   private processingQueue: Map<string, NodeJS.Timeout> = new Map();
+  private maxQueueSize: number;
 
   constructor(config: WatcherConfig) {
     super();
     this.config = config;
+    this.maxQueueSize = config.maxQueueSize || 1000;
   }
 
   /**
@@ -173,6 +176,22 @@ export class Watcher extends EventEmitter {
     const existingTimer = this.processingQueue.get(filePath);
     if (existingTimer) {
       clearTimeout(existingTimer);
+    }
+
+    // LRU eviction: if queue is full, remove oldest entry (first key in Map)
+    if (
+      this.processingQueue.size >= this.maxQueueSize &&
+      !this.processingQueue.has(filePath)
+    ) {
+      const oldestKey = this.processingQueue.keys().next().value;
+      if (oldestKey) {
+        const oldestTimer = this.processingQueue.get(oldestKey);
+        if (oldestTimer) clearTimeout(oldestTimer);
+        this.processingQueue.delete(oldestKey);
+        logger.warn(
+          `Queue full (${this.maxQueueSize}), evicted oldest entry: ${oldestKey}`
+        );
+      }
     }
 
     // Set new timer for debounced processing

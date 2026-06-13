@@ -1,10 +1,15 @@
 import {
   ValidatorRegistry,
   PatternValidator,
+  ValidatorConfig,
   createValidatorRegistry,
 } from "./validators.js";
-import { ScriptRunner, createScriptRunner } from "./scripts.js";
-import { PreventionConfigManager, createPreventionConfig } from "./config.js";
+import { ScriptRunner, ScriptConfig, createScriptRunner } from "./scripts.js";
+import {
+  PreventionConfigManager,
+  PreventionRule,
+  createPreventionConfig,
+} from "./config.js";
 import { createChildLogger } from "../shared/logger.js";
 
 const logger = createChildLogger("prevention");
@@ -26,7 +31,7 @@ export interface PreventionResult {
     severity: "error" | "warning" | "info";
   }>;
   executionTime: number;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -45,13 +50,20 @@ export interface PreventionModuleConfig {
  * Main prevention module that orchestrates validation and script execution
  */
 export class PreventionModule {
-  private configManager: PreventionConfigManager;
+  private configManager!: PreventionConfigManager;
   private validatorRegistry: ValidatorRegistry;
   private scriptRunner: ScriptRunner;
   private config: PreventionModuleConfig;
   private isRunning: boolean = false;
 
-  constructor(config: PreventionModuleConfig = {}) {
+  private constructor(
+    config: PreventionModuleConfig,
+    dependencies?: {
+      validatorRegistry?: ValidatorRegistry;
+      scriptRunner?: ScriptRunner;
+      configManager?: PreventionConfigManager;
+    }
+  ) {
     this.config = {
       enabled: true,
       failOnError: true,
@@ -61,10 +73,27 @@ export class PreventionModule {
       ...config,
     };
 
-    // Initialize components
-    this.configManager = createPreventionConfig(config.configPath);
-    this.validatorRegistry = createValidatorRegistry();
-    this.scriptRunner = createScriptRunner();
+    this.validatorRegistry =
+      dependencies?.validatorRegistry || createValidatorRegistry();
+    this.scriptRunner = dependencies?.scriptRunner || createScriptRunner();
+  }
+
+  /**
+   * Create and initialize a PreventionModule (async factory)
+   */
+  static async create(
+    config: PreventionModuleConfig = {},
+    dependencies?: {
+      validatorRegistry?: ValidatorRegistry;
+      scriptRunner?: ScriptRunner;
+      configManager?: PreventionConfigManager;
+    }
+  ): Promise<PreventionModule> {
+    const module = new PreventionModule(config, dependencies);
+    module.configManager =
+      dependencies?.configManager ||
+      (await createPreventionConfig(config.configPath));
+    return module;
   }
 
   /**
@@ -140,7 +169,9 @@ export class PreventionModule {
       logger.info(`Processing file: ${filePath}`);
 
       // Get applicable rules for this file
-      const applicableRules = this.configManager.getRulesForFile(filePath);
+      const applicableRules = await this.configManager.getRulesForFile(
+        filePath
+      );
 
       if (applicableRules.length === 0) {
         logger.debug(`No prevention rules applicable for file: ${filePath}`);
@@ -235,7 +266,7 @@ export class PreventionModule {
    */
   private async processRule(
     filePath: string,
-    rule: any
+    rule: PreventionRule
   ): Promise<{
     errors: Array<{
       rule: string;
@@ -308,7 +339,9 @@ export class PreventionModule {
     // Update script runner with custom scripts
     if (config.customScripts) {
       for (const customScript of config.customScripts) {
-        this.scriptRunner.addScript(customScript.config);
+        this.scriptRunner.addScript(
+          customScript.config as unknown as ScriptConfig
+        );
       }
     }
 
@@ -318,7 +351,9 @@ export class PreventionModule {
         const validator = new PatternValidator({
           enabled: true,
           rules: {},
-          customRules: customValidator.config?.customRules || [],
+          customRules:
+            (customValidator.config
+              ?.customRules as ValidatorConfig["customRules"]) ?? [],
         });
         this.validatorRegistry.register(customValidator.name, validator);
         logger.info(`Custom validator registered: ${customValidator.name}`);
@@ -336,7 +371,12 @@ export class PreventionModule {
     enabledRuleCount: number;
     validatorCount: number;
     scriptCount: number;
-    configStats: any;
+    configStats: {
+      totalRules: number;
+      enabledRules: number;
+      rulesByCategory: Record<string, number>;
+      rulesBySeverity: Record<string, number>;
+    };
   } {
     const configStats = this.configManager.getStats();
 
@@ -363,7 +403,7 @@ export class PreventionModule {
   /**
    * Add a custom rule
    */
-  async addRule(rule: any): Promise<void> {
+  async addRule(rule: PreventionRule): Promise<void> {
     await this.configManager.addRule(rule);
     await this.updateComponentConfigurations();
   }
@@ -392,12 +432,17 @@ export class PreventionModule {
 }
 
 /**
- * Factory function to create a prevention module
+ * Factory function to create a prevention module (async)
  */
-export function createPreventionModule(
-  config?: PreventionModuleConfig
-): PreventionModule {
-  return new PreventionModule(config);
+export async function createPreventionModule(
+  config?: PreventionModuleConfig,
+  dependencies?: {
+    validatorRegistry?: ValidatorRegistry;
+    scriptRunner?: ScriptRunner;
+    configManager?: PreventionConfigManager;
+  }
+): Promise<PreventionModule> {
+  return PreventionModule.create(config, dependencies);
 }
 
 /**
@@ -406,7 +451,7 @@ export function createPreventionModule(
 export async function setupPrevention(
   config?: PreventionModuleConfig
 ): Promise<PreventionModule> {
-  const module = createPreventionModule(config);
+  const module = await createPreventionModule(config);
   await module.start();
   return module;
 }

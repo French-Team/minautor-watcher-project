@@ -43,7 +43,7 @@ export interface ProcessingEvent {
   duration?: number;
   success?: boolean;
   error?: Error;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface BatchEvent {
@@ -122,7 +122,7 @@ export class DetectionEventBus extends EventEmitter {
   emitProcessingCompleted(
     file: FileEvent,
     processor: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ): void {
     const endTime = new Date();
     const duration = endTime.getTime() - file.timestamp.getTime();
@@ -150,7 +150,7 @@ export class DetectionEventBus extends EventEmitter {
     file: FileEvent,
     processor: string,
     error: Error,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ): void {
     const endTime = new Date();
     const duration = endTime.getTime() - file.timestamp.getTime();
@@ -312,7 +312,7 @@ export class EventUtils {
  */
 export function OnEvent(event: DetectionEvent) {
   return function (
-    target: any,
+    target: Record<string, (...args: never[]) => unknown>,
     propertyKey: string,
     descriptor: PropertyDescriptor
   ) {

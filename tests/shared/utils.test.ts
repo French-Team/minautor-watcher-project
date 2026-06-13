@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import fs from "fs-extra";
 import path from "path";
 import os from "os";
-import { Utils } from "../../src/shared/utils.js";
+import { Utils, escapeHtml, sanitizePath } from "../../src/shared/utils.js";
 
 const TEST_DIR = path.join(os.tmpdir(), "watcher-test-utils");
 
@@ -190,6 +190,47 @@ describe("Utils", () => {
 
     it("should return 0 for invalid strings", () => {
       expect(Utils.parseFileSize("invalid")).toBe(0);
+    });
+  });
+
+  describe("escapeHtml", () => {
+    it("should escape angle brackets", () => {
+      expect(escapeHtml("<script>")).toBe("&lt;script&gt;");
+    });
+
+    it("should escape ampersand", () => {
+      expect(escapeHtml("a & b")).toBe("a &amp; b");
+    });
+
+    it("should escape quotes", () => {
+      expect(escapeHtml('"hello"')).toBe("&quot;hello&quot;");
+    });
+
+    it("should handle empty string", () => {
+      expect(escapeHtml("")).toBe("");
+    });
+
+    it("should leave safe strings unchanged", () => {
+      expect(escapeHtml("hello world")).toBe("hello world");
+    });
+  });
+
+  describe("sanitizePath", () => {
+    it("should return normal paths unchanged", () => {
+      const result = sanitizePath("file.ts");
+      expect(result).toContain("file.ts");
+    });
+
+    it("should resolve relative paths", () => {
+      const result = sanitizePath("./file.ts");
+      expect(result).toContain("file.ts");
+      expect(result).not.toContain("..");
+    });
+
+    it("should reject null bytes", () => {
+      expect(() => sanitizePath("file\x00.ts")).toThrow(
+        "Path contains null byte"
+      );
     });
   });
 });

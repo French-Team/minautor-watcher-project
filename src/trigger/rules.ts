@@ -18,26 +18,26 @@ export interface TriggerRule {
     filePatterns?: string[];
     errorPatterns?: string[];
     severity?: "error" | "warning" | "info";
-    metadataConditions?: Record<string, any>;
+    metadataConditions?: Record<string, unknown>;
   };
   actions: Array<{
     type: "correct" | "notify" | "log" | "skip" | "custom";
     target?: string;
-    config?: Record<string, any>;
+    config?: Record<string, unknown>;
     delay?: number;
   }>;
   cooldown?: {
     enabled: boolean;
     period: number;
   };
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface TriggerContext {
   filePath: string;
   eventType: string;
-  error?: any;
-  metadata?: Record<string, any>;
+  error?: Error | { message: string; [key: string]: unknown };
+  metadata?: Record<string, unknown>;
   timestamp: Date;
 }
 
@@ -47,13 +47,45 @@ export interface TriggerResult {
   actions: Array<{
     type: string;
     success: boolean;
-    result?: any;
+    result?: string | unknown[] | Record<string, unknown>;
     error?: Error;
   }>;
   executionTime: number;
   skipped?: boolean;
   cooldown?: boolean;
   error?: Error;
+}
+
+interface LegacyCorrection {
+  ruleId?: string;
+  description?: string;
+  enabled?: boolean;
+  extensions?: string[];
+  action?: string;
+  pattern?: string;
+  replacement?: string;
+}
+
+interface LegacyCondition {
+  name?: string;
+  action?: string;
+}
+
+interface LegacyNotifications {
+  onFailure?: boolean;
+  channels?: string[];
+  throttle?: number;
+}
+
+interface LegacyAutoCorrect {
+  maxFileSize?: string | number;
+}
+
+interface LegacyConfig extends Record<string, unknown> {
+  corrections?: LegacyCorrection[];
+  conditions?: LegacyCondition[];
+  notifications?: LegacyNotifications;
+  autoCorrect?: LegacyAutoCorrect;
 }
 
 export class TriggerRuleManager {
@@ -154,21 +186,25 @@ export class TriggerRuleManager {
     this.loadDefaultRules();
   }
 
-  private convertLegacyConfig(raw: any): TriggerRule[] {
+  private convertLegacyConfig(raw: Record<string, unknown>): TriggerRule[] {
     const rules: TriggerRule[] = [];
-    const corrections = raw.corrections || [];
-    const conditions = raw.conditions || [];
-    const notifications = raw.notifications || {};
+    const legacyRaw = raw as LegacyConfig;
+    const corrections: LegacyCorrection[] = legacyRaw.corrections || [];
+    const conditions: LegacyCondition[] = legacyRaw.conditions || [];
+    const notifications: LegacyNotifications = legacyRaw.notifications || {};
+    const autoCorrect: LegacyAutoCorrect = legacyRaw.autoCorrect || {};
 
-    const conditionMap = new Map<string, any>();
+    const conditionMap = new Map<string, LegacyCondition>();
     for (const cond of conditions) {
-      conditionMap.set(cond.name, cond);
+      if (cond.name) {
+        conditionMap.set(cond.name, cond);
+      }
     }
 
     for (const corr of corrections) {
       const rule: TriggerRule = {
-        id: corr.ruleId,
-        name: corr.description || corr.ruleId,
+        id: corr.ruleId || "unknown",
+        name: corr.description || corr.ruleId || "unnamed",
         description: corr.description || "",
         enabled: corr.enabled !== false,
         priority: 1,
@@ -240,7 +276,11 @@ export class TriggerRuleManager {
       }
 
       if (notifications.onFailure !== false) {
-        const notifyAction: any = {
+        const notifyAction: {
+          type: "notify";
+          target: string;
+          config: Record<string, unknown>;
+        } = {
           type: "notify",
           target: "slack,email",
           config: { level: "warning" },
@@ -258,7 +298,7 @@ export class TriggerRuleManager {
         if (cond.name === "file-too-large" && cond.action === "skip") {
           rule.actions.unshift({
             type: "skip",
-            config: { maxFileSize: raw.autoCorrect?.maxFileSize || "1MB" },
+            config: { maxFileSize: autoCorrect.maxFileSize || "1MB" },
           });
         }
       }

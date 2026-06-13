@@ -1,15 +1,110 @@
 import fs from "fs-extra";
 import path from "path";
-import { exec } from "child_process";
-import { promisify } from "util";
-import { Utils } from "../shared/utils.js";
+import { Utils, safeSpawn } from "../shared/utils.js";
 import { createChildLogger } from "../shared/logger.js";
 
-const execAsync = promisify(exec);
 const logger = createChildLogger("trigger-correctors");
+
+/**
+ * File lock map to serialize corrections per file.
+ * Prevents concurrent writes from ESLint and Prettier on the same file.
+ */
+const fileLocks = new Map<string, Promise<void>>();
+
+/**
+ * Execute a function while holding a file lock.
+ * Serializes writes to the same file to prevent race conditions.
+ */
+async function withFileLock<T>(
+  filePath: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  // Wait for any pending lock on this file
+  const prev = fileLocks.get(filePath);
+  if (prev) {
+    await prev;
+  }
+
+  // Create a new promise for this lock
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  fileLocks.set(filePath, current);
+
+  try {
+    return await fn();
+  } finally {
+    release();
+    // Clean up if we're still the holder
+    if (fileLocks.get(filePath) === current) {
+      fileLocks.delete(filePath);
+    }
+  }
+}
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Write file content with automatic backup.
+ * If backup is true, creates a .bak file before writing.
+ * Returns the backup path if created.
+ */
+async function writeFileWithBackup(
+  filePath: string,
+  content: string,
+  backup = true
+): Promise<string | null> {
+  if (!backup) {
+    await fs.writeFile(filePath, content);
+    return null;
+  }
+  const backupPath = filePath + ".bak";
+  if (await fs.pathExists(filePath)) {
+    await fs.copy(filePath, backupPath);
+  }
+  await fs.writeFile(filePath, content);
+  return backupPath;
+}
+
+/**
+ * Restore file from backup. Returns true if restored.
+ */
+export async function restoreFromBackup(filePath: string): Promise<boolean> {
+  const backupPath = filePath + ".bak";
+  if (await fs.pathExists(backupPath)) {
+    await fs.move(backupPath, filePath, { overwrite: true });
+    logger.info(`Restored ${filePath} from backup`);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Clean up .bak files older than maxAgeMs.
+ */
+export async function cleanupBackups(
+  dir: string,
+  maxAgeMs = 24 * 60 * 60 * 1000
+): Promise<number> {
+  let cleaned = 0;
+  try {
+    const files = await fs.readdir(dir);
+    for (const file of files) {
+      if (!file.endsWith(".bak")) continue;
+      const filePath = path.join(dir, file);
+      const stat = await fs.stat(filePath);
+      if (Date.now() - stat.mtimeMs > maxAgeMs) {
+        await fs.remove(filePath);
+        cleaned++;
+      }
+    }
+  } catch {
+    // ignore errors during cleanup
+  }
+  return cleaned;
 }
 
 /**
@@ -29,7 +124,7 @@ export interface CorrectionResult {
   }>;
   executionTime: number;
   error?: Error;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -62,7 +157,7 @@ export interface CorrectionRule {
     command?: string;
     args?: string[];
   }>;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -80,15 +175,34 @@ export abstract class BaseCorrector {
   /**
    * Check if this corrector can handle the given file and error
    */
-  abstract canCorrect(filePath: string, error?: any): boolean;
+  abstract canCorrect(filePath: string, error?: unknown): boolean;
 
   /**
    * Apply corrections to a file
    */
   abstract applyCorrection(
     filePath: string,
-    error?: any
+    error?: unknown,
+    dryRun?: boolean
   ): Promise<CorrectionResult>;
+
+  /**
+   * Apply corrections to multiple files in batch (override for true batch processing)
+   */
+  async applyBatchCorrection(
+    filePaths: string[],
+    error?: unknown,
+    dryRun?: boolean
+  ): Promise<Map<string, CorrectionResult>> {
+    const results = new Map<string, CorrectionResult>();
+    for (const filePath of filePaths) {
+      results.set(
+        filePath,
+        await this.applyCorrection(filePath, error, dryRun)
+      );
+    }
+    return results;
+  }
 
   /**
    * Get corrector name
@@ -120,7 +234,7 @@ export class TextReplacementCorrector extends BaseCorrector {
     super(config.id, config);
   }
 
-  canCorrect(filePath: string, _error?: any): boolean {
+  canCorrect(filePath: string, _error?: unknown): boolean {
     if (!this.isEnabled()) return false;
 
     const extension = Utils.getFileExtension(filePath);
@@ -148,7 +262,8 @@ export class TextReplacementCorrector extends BaseCorrector {
 
   async applyCorrection(
     filePath: string,
-    _error?: any
+    _error?: unknown,
+    dryRun = false
   ): Promise<CorrectionResult> {
     const startTime = Date.now();
     const result: CorrectionResult = {
@@ -202,7 +317,9 @@ export class TextReplacementCorrector extends BaseCorrector {
 
       // Write corrected content if there were changes
       if (hasChanges && correctedContent !== originalContent) {
-        await fs.writeFile(filePath, correctedContent);
+        if (!dryRun) {
+          await writeFileWithBackup(filePath, correctedContent);
+        }
         result.corrected = true;
         result.correctedContent = correctedContent;
         logger.info(
@@ -227,7 +344,7 @@ export class TextReplacementCorrector extends BaseCorrector {
 
   private applyTextReplacement(
     content: string,
-    action: any
+    action: CorrectionRule["actions"][number]
   ): {
     modified: boolean;
     content: string;
@@ -249,19 +366,20 @@ export class TextReplacementCorrector extends BaseCorrector {
 
     if (action.target === "all") {
       // Replace all occurrences
-      const regex = new RegExp(escapeRegex(action.content), "g");
+      const searchContent = action.content ?? "";
+      const regex = new RegExp(escapeRegex(searchContent), "g");
       const newContent = content.replace(regex, action.newContent || "");
 
       if (newContent !== content) {
         // Calculate approximate line/column for the change
         const lines = content.split("\n");
         for (let i = 0; i < lines.length; i++) {
-          if (lines[i].includes(action.content)) {
+          if (lines[i].includes(searchContent)) {
             details.push({
               type: "replace",
               line: i + 1,
-              column: lines[i].indexOf(action.content) + 1,
-              oldText: action.content,
+              column: lines[i].indexOf(searchContent) + 1,
+              oldText: searchContent,
               newText: action.newContent || "",
             });
           }
@@ -280,7 +398,7 @@ export class TextReplacementCorrector extends BaseCorrector {
 
   private applyTextInsertion(
     content: string,
-    action: any
+    action: CorrectionRule["actions"][number]
   ): {
     modified: boolean;
     content: string;
@@ -298,7 +416,7 @@ export class TextReplacementCorrector extends BaseCorrector {
       newText: string;
     }> = [];
     const lines = content.split("\n");
-    let targetLine = action.target;
+    let targetLine: string | number = action.target;
 
     if (targetLine === "end") {
       targetLine = lines.length;
@@ -328,7 +446,7 @@ export class TextReplacementCorrector extends BaseCorrector {
 
   private applyTextDeletion(
     content: string,
-    action: any
+    action: CorrectionRule["actions"][number]
   ): {
     modified: boolean;
     content: string;
@@ -394,7 +512,7 @@ export class TextReplacementCorrector extends BaseCorrector {
  * Command execution corrector
  */
 export class CommandCorrector extends BaseCorrector {
-  canCorrect(_filePath: string, _error?: any): boolean {
+  canCorrect(_filePath: string, _error?: unknown): boolean {
     if (!this.isEnabled()) return false;
 
     // Check if any action is a command execution
@@ -403,7 +521,8 @@ export class CommandCorrector extends BaseCorrector {
 
   async applyCorrection(
     filePath: string,
-    _error?: any
+    _error?: unknown,
+    _dryRun = false
   ): Promise<CorrectionResult> {
     const startTime = Date.now();
     const result: CorrectionResult = {
@@ -453,7 +572,7 @@ export class CommandCorrector extends BaseCorrector {
   }
 
   private async executeCommand(
-    action: any,
+    action: CorrectionRule["actions"][number],
     filePath: string
   ): Promise<{ success: boolean; error?: Error }> {
     try {
@@ -461,11 +580,13 @@ export class CommandCorrector extends BaseCorrector {
       const args = action.args || [];
       const cwd = path.dirname(filePath);
 
+      if (!command) {
+        return { success: false, error: new Error("No command specified") };
+      }
+
       logger.debug(`Executing command: ${command} ${args.join(" ")} in ${cwd}`);
 
-      const { stderr } = await execAsync(`${command} ${args.join(" ")}`, {
-        cwd,
-      });
+      const { stderr } = await safeSpawn(command, args, { cwd });
 
       if (stderr) {
         logger.warn(`Command stderr: ${stderr}`);
@@ -489,7 +610,7 @@ export class ESLintFixCorrector extends BaseCorrector {
     super(config.id, config);
   }
 
-  canCorrect(filePath: string, _error?: any): boolean {
+  canCorrect(filePath: string, _error?: unknown): boolean {
     if (!this.isEnabled()) return false;
 
     const extension = Utils.getFileExtension(filePath);
@@ -498,7 +619,8 @@ export class ESLintFixCorrector extends BaseCorrector {
 
   async applyCorrection(
     filePath: string,
-    _error?: any
+    _error?: unknown,
+    _dryRun = false
   ): Promise<CorrectionResult> {
     const startTime = Date.now();
     const result: CorrectionResult = {
@@ -511,25 +633,26 @@ export class ESLintFixCorrector extends BaseCorrector {
     try {
       logger.info(`Running ESLint auto-fix on ${filePath}`);
 
-      const { stdout, stderr } = await execAsync(
-        `npx eslint --fix "${filePath}"`
-      );
+      // Serialize writes to prevent concurrent ESLint + Prettier conflicts
+      await withFileLock(filePath, async () => {
+        const { stderr } = await safeSpawn("npx", [
+          "eslint",
+          "--fix",
+          filePath,
+        ]);
 
-      result.corrected = !stderr || !stderr.includes("error");
-      result.success = true;
+        result.corrected = !stderr || !stderr.includes("error");
+        result.success = true;
 
-      if (stderr) {
-        logger.warn(`ESLint stderr: ${stderr}`);
-      }
+        if (stderr) {
+          logger.warn(`ESLint stderr: ${stderr}`);
+        }
 
-      if (stdout) {
-        logger.debug(`ESLint output: ${stdout}`);
-      }
-
-      // Read the corrected content
-      if (result.corrected) {
-        result.correctedContent = await fs.readFile(filePath, "utf-8");
-      }
+        // Read the corrected content
+        if (result.corrected) {
+          result.correctedContent = await fs.readFile(filePath, "utf-8");
+        }
+      });
     } catch (error) {
       logger.error(`ESLint auto-fix failed for ${filePath}:`, error);
       result.error = error instanceof Error ? error : new Error(String(error));
@@ -537,6 +660,83 @@ export class ESLintFixCorrector extends BaseCorrector {
 
     result.executionTime = Date.now() - startTime;
     return result;
+  }
+
+  /**
+   * Batch ESLint fix: process multiple files in a single invocation
+   */
+  async applyBatchCorrection(
+    filePaths: string[],
+    _error?: unknown
+  ): Promise<Map<string, CorrectionResult>> {
+    const results = new Map<string, CorrectionResult>();
+    const startTime = Date.now();
+
+    if (filePaths.length === 0) return results;
+
+    if (filePaths.length === 1) {
+      results.set(
+        filePaths[0],
+        await this.applyCorrection(filePaths[0], _error)
+      );
+      return results;
+    }
+
+    try {
+      logger.info(`Running ESLint batch fix on ${filePaths.length} files`);
+
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
+        const batch = filePaths.slice(i, i + BATCH_SIZE);
+
+        const { stderr } = await safeSpawn("npx", [
+          "eslint",
+          "--fix",
+          ...batch,
+        ]);
+
+        const hasError = stderr && stderr.includes("error");
+
+        for (const filePath of batch) {
+          const result: CorrectionResult = {
+            success: true,
+            corrected: !hasError,
+            changes: [],
+            executionTime: Date.now() - startTime,
+          };
+
+          if (result.corrected) {
+            try {
+              result.correctedContent = await fs.readFile(filePath, "utf-8");
+            } catch {
+              result.correctedContent = undefined;
+            }
+          }
+
+          results.set(filePath, result);
+        }
+
+        if (stderr) {
+          logger.warn(`ESLint batch stderr: ${stderr}`);
+        }
+      }
+    } catch (error) {
+      logger.error(`ESLint batch fix failed:`, error);
+      const err = error instanceof Error ? error : new Error(String(error));
+      for (const filePath of filePaths) {
+        if (!results.has(filePath)) {
+          results.set(filePath, {
+            success: false,
+            corrected: false,
+            changes: [],
+            executionTime: Date.now() - startTime,
+            error: err,
+          });
+        }
+      }
+    }
+
+    return results;
   }
 }
 
@@ -548,7 +748,7 @@ export class PrettierFormatCorrector extends BaseCorrector {
     super(config.id, config);
   }
 
-  canCorrect(filePath: string, _error?: any): boolean {
+  canCorrect(filePath: string, _error?: unknown): boolean {
     if (!this.isEnabled()) return false;
 
     const extension = Utils.getFileExtension(filePath);
@@ -559,7 +759,8 @@ export class PrettierFormatCorrector extends BaseCorrector {
 
   async applyCorrection(
     filePath: string,
-    _error?: any
+    _error?: unknown,
+    _dryRun = false
   ): Promise<CorrectionResult> {
     const startTime = Date.now();
     const result: CorrectionResult = {
@@ -572,23 +773,24 @@ export class PrettierFormatCorrector extends BaseCorrector {
     try {
       logger.info(`Running Prettier format on ${filePath}`);
 
-      const { stdout, stderr } = await execAsync(
-        `npx prettier --write "${filePath}"`
-      );
+      // Serialize writes to prevent concurrent ESLint + Prettier conflicts
+      await withFileLock(filePath, async () => {
+        const { stderr } = await safeSpawn("npx", [
+          "prettier",
+          "--write",
+          filePath,
+        ]);
 
-      result.corrected = true;
-      result.success = true;
+        result.corrected = true;
+        result.success = true;
 
-      if (stderr) {
-        logger.warn(`Prettier stderr: ${stderr}`);
-      }
+        if (stderr) {
+          logger.warn(`Prettier stderr: ${stderr}`);
+        }
 
-      if (stdout) {
-        logger.debug(`Prettier output: ${stdout}`);
-      }
-
-      // Read the formatted content
-      result.correctedContent = await fs.readFile(filePath, "utf-8");
+        // Read the formatted content
+        result.correctedContent = await fs.readFile(filePath, "utf-8");
+      });
     } catch (error) {
       logger.error(`Prettier format failed for ${filePath}:`, error);
       result.error = error instanceof Error ? error : new Error(String(error));
@@ -596,6 +798,71 @@ export class PrettierFormatCorrector extends BaseCorrector {
 
     result.executionTime = Date.now() - startTime;
     return result;
+  }
+
+  /**
+   * Batch Prettier format: process multiple files in a single invocation
+   */
+  async applyBatchCorrection(
+    filePaths: string[],
+    _error?: unknown
+  ): Promise<Map<string, CorrectionResult>> {
+    const results = new Map<string, CorrectionResult>();
+    const startTime = Date.now();
+
+    if (filePaths.length === 0) return results;
+
+    if (filePaths.length === 1) {
+      results.set(
+        filePaths[0],
+        await this.applyCorrection(filePaths[0], _error)
+      );
+      return results;
+    }
+
+    try {
+      logger.info(`Running Prettier batch format on ${filePaths.length} files`);
+
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
+        const batch = filePaths.slice(i, i + BATCH_SIZE);
+
+        await safeSpawn("npx", ["prettier", "--write", ...batch]);
+
+        for (const filePath of batch) {
+          const result: CorrectionResult = {
+            success: true,
+            corrected: true,
+            changes: [],
+            executionTime: Date.now() - startTime,
+          };
+
+          try {
+            result.correctedContent = await fs.readFile(filePath, "utf-8");
+          } catch {
+            result.correctedContent = undefined;
+          }
+
+          results.set(filePath, result);
+        }
+      }
+    } catch (error) {
+      logger.error(`Prettier batch format failed:`, error);
+      const err = error instanceof Error ? error : new Error(String(error));
+      for (const filePath of filePaths) {
+        if (!results.has(filePath)) {
+          results.set(filePath, {
+            success: false,
+            corrected: false,
+            changes: [],
+            executionTime: Date.now() - startTime,
+            error: err,
+          });
+        }
+      }
+    }
+
+    return results;
   }
 }
 
@@ -630,7 +897,7 @@ export class CorrectorRegistry {
   /**
    * Get correctors applicable to a file
    */
-  getApplicableCorrectors(filePath: string, error?: any): BaseCorrector[] {
+  getApplicableCorrectors(filePath: string, error?: unknown): BaseCorrector[] {
     return this.getAll()
       .filter((corrector) => corrector.canCorrect(filePath, error))
       .sort((a, b) => b.getPriority() - a.getPriority()); // Sort by priority (highest first)
@@ -641,18 +908,21 @@ export class CorrectorRegistry {
    */
   async applyCorrections(
     filePath: string,
-    error?: any
+    error?: unknown,
+    dryRun = false
   ): Promise<CorrectionResult[]> {
     const applicableCorrectors = this.getApplicableCorrectors(filePath, error);
     const results: CorrectionResult[] = [];
 
     logger.info(
-      `Applying ${applicableCorrectors.length} correctors to ${filePath}`
+      `Applying ${applicableCorrectors.length} correctors to ${filePath}${
+        dryRun ? " (dry-run)" : ""
+      }`
     );
 
     for (const corrector of applicableCorrectors) {
       try {
-        const result = await corrector.applyCorrection(filePath, error);
+        const result = await corrector.applyCorrection(filePath, error, dryRun);
         results.push(result);
 
         if (result.corrected) {
@@ -677,13 +947,87 @@ export class CorrectorRegistry {
 
     return results;
   }
+
+  /**
+   * Apply corrections to multiple files in batch
+   * Groups files by applicable corrector, then runs batch processing
+   */
+  async applyBatchCorrections(
+    filePaths: string[],
+    error?: unknown
+  ): Promise<Map<string, CorrectionResult[]>> {
+    const allResults = new Map<string, CorrectionResult[]>();
+
+    if (filePaths.length === 0) return allResults;
+
+    for (const filePath of filePaths) {
+      allResults.set(filePath, []);
+    }
+
+    const correctorFileMap = new Map<string, string[]>();
+    for (const filePath of filePaths) {
+      const applicable = this.getApplicableCorrectors(filePath, error);
+      for (const corrector of applicable) {
+        const name = corrector.getName();
+        if (!correctorFileMap.has(name)) {
+          correctorFileMap.set(name, []);
+        }
+        correctorFileMap.get(name)!.push(filePath);
+      }
+    }
+
+    for (const [correctorName, files] of correctorFileMap) {
+      const corrector = this.correctors.get(correctorName);
+      if (!corrector) continue;
+
+      logger.info(`Batch applying ${correctorName} to ${files.length} files`);
+
+      try {
+        const batchResults = await corrector.applyBatchCorrection(files, error);
+
+        for (const [filePath, result] of batchResults) {
+          const existing = allResults.get(filePath) || [];
+          existing.push(result);
+          allResults.set(filePath, existing);
+
+          if (result.corrected) {
+            logger.info(
+              `Corrector ${correctorName} successfully corrected ${filePath}`
+            );
+          }
+        }
+      } catch (err) {
+        logger.error(`Corrector ${correctorName} batch failed:`, err);
+        const errorResult: CorrectionResult = {
+          success: false,
+          corrected: false,
+          changes: [],
+          executionTime: 0,
+          error: err instanceof Error ? err : new Error(String(err)),
+        };
+        for (const filePath of files) {
+          const existing = allResults.get(filePath) || [];
+          existing.push(errorResult);
+          allResults.set(filePath, existing);
+        }
+      }
+    }
+
+    return allResults;
+  }
 }
 
 /**
  * Create default corrector registry
  */
-export function createCorrectorRegistry(): CorrectorRegistry {
+export function createCorrectorRegistry(options?: {
+  skipDefaults?: boolean;
+}): CorrectorRegistry {
   const registry = new CorrectorRegistry();
+
+  if (options?.skipDefaults) {
+    return registry;
+  }
 
   // Register default correctors
   registry.register(

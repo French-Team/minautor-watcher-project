@@ -1,8 +1,114 @@
 import fs from "fs-extra";
 import path from "path";
+import { execFile, spawn, type SpawnOptions } from "child_process";
 import { glob } from "glob";
 import Joi from "joi";
 import logger from "./logger.js";
+
+/**
+ * Safe execFile - runs a command with arguments without shell interpretation.
+ * Returns { stdout, stderr } or throws on non-zero exit.
+ */
+export function safeExecFile(
+  command: string,
+  args: string[],
+  options?: { cwd?: string; timeout?: number }
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      command,
+      args,
+      { timeout: options?.timeout ?? 60000, maxBuffer: 10 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve({
+            stdout: stdout.toString(),
+            stderr: stderr.toString(),
+          });
+        }
+      }
+    );
+  });
+}
+
+/**
+ * Safe spawn - runs a command with arguments, returns stdout/stderr.
+ * Does NOT use a shell - immune to injection.
+ */
+export function safeSpawn(
+  command: string,
+  args: string[],
+  options?: SpawnOptions & { timeout?: number }
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  return new Promise((resolve, reject) => {
+    const timeout = options?.timeout ?? 60000;
+    const child = spawn(command, args, {
+      cwd: options?.cwd,
+      env: options?.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout?.on("data", (data: Buffer) => {
+      stdout += data.toString();
+    });
+
+    child.stderr?.on("data", (data: Buffer) => {
+      stderr += data.toString();
+    });
+
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error(`Process ${command} timed out after ${timeout}ms`));
+    }, timeout);
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({ stdout, stderr, exitCode: code ?? 1 });
+    });
+
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+/**
+ * Escape HTML special characters to prevent XSS injection.
+ */
+export function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Sanitize a file path - reject dangerous patterns.
+ * Returns the resolved path if valid, throws if path is suspicious.
+ */
+export function sanitizePath(filePath: string): string {
+  const resolved = path.resolve(filePath);
+
+  // Reject path traversal
+  if (resolved.includes("..")) {
+    throw new Error(`Path contains traversal: ${filePath}`);
+  }
+
+  // Reject null bytes
+  if (resolved.includes("\0")) {
+    throw new Error(`Path contains null byte: ${filePath}`);
+  }
+
+  return resolved;
+}
 
 /**
  * Utility class for common file and system operations
@@ -24,7 +130,7 @@ export class Utils {
   /**
    * Read and parse a JSON file safely
    */
-  static async readJsonFile<T = any>(filePath: string): Promise<T | null> {
+  static async readJsonFile<T = unknown>(filePath: string): Promise<T | null> {
     try {
       if (!(await this.pathExists(filePath))) {
         logger.warn(`File not found: ${filePath}`);
@@ -42,7 +148,10 @@ export class Utils {
   /**
    * Write JSON to a file with pretty formatting
    */
-  static async writeJsonFile(filePath: string, data: any): Promise<boolean> {
+  static async writeJsonFile(
+    filePath: string,
+    data: unknown
+  ): Promise<boolean> {
     try {
       await fs.ensureDir(path.dirname(filePath));
       await fs.writeJson(filePath, data, { spaces: 2 });
@@ -106,7 +215,7 @@ export class Utils {
   /**
    * Debounce function to limit the rate of function calls
    */
-  static debounce<T extends (...args: any[]) => any>(
+  static debounce<T extends (...args: unknown[]) => unknown>(
     func: T,
     wait: number
   ): (...args: Parameters<T>) => void {

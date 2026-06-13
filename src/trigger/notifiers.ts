@@ -1,7 +1,9 @@
 import { WebClient } from "@slack/web-api";
+import type { Block, KnownBlock } from "@slack/types";
 import nodemailer from "nodemailer";
 import fs from "fs-extra";
 import path from "path";
+import { escapeHtml } from "../shared/utils.js";
 import { createChildLogger } from "../shared/logger.js";
 
 const logger = createChildLogger("trigger-notifiers");
@@ -34,7 +36,7 @@ export interface NotificationData {
   message: string;
   level: NotificationLevel;
   channel: NotificationChannel;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   file?: string;
   error?: Error;
   timestamp?: Date;
@@ -112,7 +114,7 @@ export class SlackNotifier extends BaseNotifier {
 
       const emoji = this.getLevelEmoji(data.level);
 
-      const blocks: any[] = [
+      const blocks: (Block | KnownBlock)[] = [
         {
           type: "header",
           text: {
@@ -300,26 +302,24 @@ export class EmailNotifier extends BaseNotifier {
   private formatHtml(data: NotificationData): string {
     const level = data.level.toUpperCase();
     const fileInfo = data.file
-      ? `<p><strong>File:</strong> ${path.basename(data.file)}</p>`
+      ? `<p><strong>File:</strong> ${escapeHtml(path.basename(data.file))}</p>`
       : "";
     const errorInfo = data.error
-      ? `<p><strong>Error:</strong> ${data.error.message}</p>`
+      ? `<p><strong>Error:</strong> ${escapeHtml(data.error.message)}</p>`
       : "";
     const metadataInfo = data.metadata
-      ? `<p><strong>Details:</strong><pre>${JSON.stringify(
-          data.metadata,
-          null,
-          2
+      ? `<p><strong>Details:</strong><pre>${escapeHtml(
+          JSON.stringify(data.metadata, null, 2)
         )}</pre></p>`
       : "";
 
     return `
       <html>
         <body>
-          <h2 style="color: ${this.getLevelColor(data.level)};">[${level}] ${
-      data.title
-    }</h2>
-          <p>${data.message}</p>
+          <h2 style="color: ${this.getLevelColor(data.level)};">[${escapeHtml(
+      level
+    )}] ${escapeHtml(data.title)}</h2>
+          <p>${escapeHtml(data.message)}</p>
           ${fileInfo}
           ${errorInfo}
           ${metadataInfo}
@@ -566,8 +566,14 @@ export class NotifierRegistry {
 /**
  * Create default notifier registry with common notifiers
  */
-export function createNotifierRegistry(): NotifierRegistry {
+export function createNotifierRegistry(options?: {
+  skipDefaults?: boolean;
+}): NotifierRegistry {
   const registry = new NotifierRegistry();
+
+  if (options?.skipDefaults) {
+    return registry;
+  }
 
   // Register default notifiers
   registry.register(NotificationChannel.SLACK, new SlackNotifier());
@@ -590,7 +596,7 @@ export class NotificationUtils {
     message: string,
     filePath: string,
     level: NotificationLevel = NotificationLevel.INFO,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ): NotificationData {
     return {
       title,
@@ -610,7 +616,7 @@ export class NotificationUtils {
     title: string,
     error: Error,
     filePath?: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ): NotificationData {
     return {
       title,
@@ -631,7 +637,7 @@ export class NotificationUtils {
     title: string,
     correctedFiles: string[],
     failedFiles: string[],
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ): NotificationData {
     const totalFiles = correctedFiles.length + failedFiles.length;
     const successRate =

@@ -1,6 +1,16 @@
 import { Watcher, WatcherEvent, createWatcher } from "./watcher.js";
-import { FileFilter, FilterPresets, createFileFilter } from "./filters.js";
-import { DetectionEventBus, DetectionEvent, eventBus } from "./events.js";
+import {
+  FileFilter,
+  FilterPresets,
+  FilterCriteria,
+  createFileFilter,
+  type FileEvent,
+} from "./filters.js";
+import {
+  DetectionEventBus,
+  DetectionEvent,
+  eventBus as defaultEventBus,
+} from "./events.js";
 import { Utils, ConfigSchemas } from "../shared/utils.js";
 import { createChildLogger } from "../shared/logger.js";
 
@@ -15,7 +25,7 @@ export interface DetectionConfig {
   watchExtensions: string[];
   processingDelay: number;
   filterPreset?: "jsTsProject" | "minimal" | "comprehensive";
-  customFilters?: any;
+  customFilters?: FilterCriteria;
 }
 
 /**
@@ -28,9 +38,12 @@ export class DetectionModule {
   private config: DetectionConfig;
   private isRunning: boolean = false;
 
-  constructor(config: DetectionConfig) {
+  constructor(
+    config: DetectionConfig,
+    dependencies?: { eventBus?: DetectionEventBus }
+  ) {
     this.config = config;
-    this.eventBus = eventBus;
+    this.eventBus = dependencies?.eventBus || defaultEventBus;
 
     // Create watcher instance
     this.watcher = createWatcher({
@@ -40,7 +53,8 @@ export class DetectionModule {
       processingDelay: config.processingDelay,
     });
 
-    // Create filter instance
+    // Create filter instance (note: extensions also filtered by Watcher.shouldProcessFile -
+    // double-check is intentional for defense-in-depth when FileFilter is used standalone)
     const filterCriteria = config.filterPreset
       ? FilterPresets[config.filterPreset]()
       : config.customFilters || {};
@@ -100,7 +114,7 @@ export class DetectionModule {
   /**
    * Update filter criteria
    */
-  updateFilter(criteria: any): void {
+  updateFilter(criteria: Partial<FilterCriteria>): void {
     this.filter.updateCriteria(criteria);
     logger.info("Filter criteria updated");
   }
@@ -110,8 +124,8 @@ export class DetectionModule {
    */
   getStatus(): {
     isRunning: boolean;
-    watcherStatus: any;
-    filterCriteria: any;
+    watcherStatus: { isRunning: boolean; watchedFiles: number };
+    filterCriteria: FilterCriteria;
   } {
     return {
       isRunning: this.isRunning,
@@ -172,7 +186,7 @@ export class DetectionModule {
   private setupWatcherEventForwarding(): void {
     // Forward file events through the detection filter
     const forwardEvent = (detectionEvent: DetectionEvent) => {
-      return async (event: any) => {
+      return async (event: FileEvent) => {
         const filterResult = await this.filter.apply(event);
 
         if (filterResult.passed) {
@@ -215,7 +229,8 @@ export class DetectionModule {
  * Factory function to create a detection module
  */
 export function createDetectionModule(
-  config?: Partial<DetectionConfig>
+  config?: Partial<DetectionConfig>,
+  dependencies?: { eventBus?: DetectionEventBus }
 ): DetectionModule {
   const defaultConfig: DetectionConfig = {
     watchDir: process.env.WATCH_DIR || process.cwd(),
@@ -234,7 +249,7 @@ export function createDetectionModule(
   // Validate configuration
   Utils.validateConfig(finalConfig, ConfigSchemas.watcherConfig);
 
-  return new DetectionModule(finalConfig);
+  return new DetectionModule(finalConfig, dependencies);
 }
 
 /**
@@ -245,18 +260,8 @@ export async function setupDetection(
 ): Promise<DetectionModule> {
   const module = createDetectionModule(config);
 
-  // Set up graceful shutdown
-  process.on("SIGINT", async () => {
-    logger.info("Received SIGINT, shutting down detection module...");
-    await module.stop();
-    process.exit(0);
-  });
-
-  process.on("SIGTERM", async () => {
-    logger.info("Received SIGTERM, shutting down detection module...");
-    await module.stop();
-    process.exit(0);
-  });
+  // Note: Signal handlers (SIGINT/SIGTERM) are managed centrally
+  // by WatcherService in src/index.ts
 
   return module;
 }

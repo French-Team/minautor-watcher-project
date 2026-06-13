@@ -31,7 +31,7 @@ export interface FilterCriteria {
 export interface FilterResult {
   passed: boolean;
   reason?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**

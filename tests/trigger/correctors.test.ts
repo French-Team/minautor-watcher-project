@@ -6,6 +6,8 @@ import {
   CorrectorRegistry,
   createCorrectorRegistry,
   TextReplacementCorrector,
+  restoreFromBackup,
+  cleanupBackups,
 } from "../../src/trigger/correctors.js";
 
 const TEST_DIR = path.join(os.tmpdir(), "watcher-test-correctors");
@@ -144,6 +146,73 @@ describe("CorrectorRegistry", () => {
       const registry = createCorrectorRegistry();
       const textReplacement = registry.get("text-replacement");
       expect(textReplacement?.isEnabled()).toBe(false);
+    });
+  });
+
+  describe("backup/rollback", () => {
+    it("should create .bak file when applying correction", async () => {
+      const filePath = path.join(TEST_DIR, "backup-test.ts");
+      await fs.writeFile(filePath, 'console.log("hello");');
+
+      const corrector = new TextReplacementCorrector({
+        id: "test-backup",
+        name: "Test Backup",
+        description: "Test",
+        enabled: true,
+        priority: 1,
+        conditions: {},
+        actions: [
+          {
+            type: "replace",
+            target: "all",
+            content: 'console.log("hello")',
+            newContent: 'logger.info("hello")',
+          },
+        ],
+      });
+
+      await corrector.applyCorrection(filePath);
+      expect(await fs.pathExists(filePath + ".bak")).toBe(true);
+      const backupContent = await fs.readFile(filePath + ".bak", "utf-8");
+      expect(backupContent).toContain('console.log("hello")');
+    });
+
+    it("should restore from backup", async () => {
+      const filePath = path.join(TEST_DIR, "restore-test.ts");
+      await fs.writeFile(filePath, "original content");
+      await fs.writeFile(filePath + ".bak", "original content");
+
+      await fs.writeFile(filePath, "modified content");
+      const restored = await restoreFromBackup(filePath);
+      expect(restored).toBe(true);
+      const content = await fs.readFile(filePath, "utf-8");
+      expect(content).toBe("original content");
+    });
+
+    it("should return false when no backup exists", async () => {
+      const filePath = path.join(TEST_DIR, "no-backup-test.ts");
+      const restored = await restoreFromBackup(filePath);
+      expect(restored).toBe(false);
+    });
+
+    it("should cleanup old .bak files", async () => {
+      const backupDir = path.join(TEST_DIR, "cleanup-test");
+      await fs.ensureDir(backupDir);
+      await fs.writeFile(path.join(backupDir, "old.ts.bak"), "old");
+      await fs.writeFile(path.join(backupDir, "keep.ts"), "keep");
+
+      // Make the .bak file appear old
+      const oldTime = new Date(Date.now() - 48 * 60 * 60 * 1000);
+      await fs.utimes(path.join(backupDir, "old.ts.bak"), oldTime, oldTime);
+
+      const cleaned = await cleanupBackups(backupDir, 24 * 60 * 60 * 1000);
+      expect(cleaned).toBe(1);
+      expect(await fs.pathExists(path.join(backupDir, "old.ts.bak"))).toBe(
+        false
+      );
+      expect(await fs.pathExists(path.join(backupDir, "keep.ts"))).toBe(true);
+
+      await fs.remove(backupDir);
     });
   });
 });

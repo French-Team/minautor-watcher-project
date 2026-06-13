@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, jest } from "@jest/globals";
+import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import fs from "fs-extra";
 import path from "path";
 import os from "os";

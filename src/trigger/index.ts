@@ -3,14 +3,18 @@ import {
   NotifierRegistry,
   createNotifierRegistry,
   NotificationUtils,
+  NotificationLevel,
+  NotificationChannel,
 } from "./notifiers.js";
 import {
   TriggerRuleManager,
   createTriggerRuleManager,
   TriggerContext,
   TriggerResult,
+  TriggerRule,
 } from "./rules.js";
-import { Utils } from "../shared/utils.js";
+import { Utils, safeSpawn } from "../shared/utils.js";
+import { CircuitBreaker, retryWithBackoff } from "../shared/circuit-breaker.js";
 import { createChildLogger } from "../shared/logger.js";
 
 const logger = createChildLogger("trigger");
@@ -36,8 +40,16 @@ export class TriggerModule {
   private notifierRegistry: NotifierRegistry;
   private config: TriggerModuleConfig;
   private isRunning: boolean = false;
+  private circuitBreakers = new Map<string, CircuitBreaker>();
 
-  constructor(config: TriggerModuleConfig = {}) {
+  constructor(
+    config: TriggerModuleConfig = {},
+    dependencies?: {
+      ruleManager?: TriggerRuleManager;
+      correctorRegistry?: CorrectorRegistry;
+      notifierRegistry?: NotifierRegistry;
+    }
+  ) {
     this.config = {
       enabled: true,
       autoCorrect: true,
@@ -47,10 +59,13 @@ export class TriggerModule {
       ...config,
     };
 
-    // Initialize components
-    this.ruleManager = createTriggerRuleManager(config.configPath);
-    this.correctorRegistry = createCorrectorRegistry();
-    this.notifierRegistry = createNotifierRegistry();
+    // Initialize components (with dependency injection support)
+    this.ruleManager =
+      dependencies?.ruleManager || createTriggerRuleManager(config.configPath);
+    this.correctorRegistry =
+      dependencies?.correctorRegistry || createCorrectorRegistry();
+    this.notifierRegistry =
+      dependencies?.notifierRegistry || createNotifierRegistry();
   }
 
   /**
@@ -152,7 +167,7 @@ export class TriggerModule {
    * Execute multiple trigger rules
    */
   private async executeRules(
-    rules: any[],
+    rules: TriggerRule[],
     context: TriggerContext
   ): Promise<TriggerResult[]> {
     const results: TriggerResult[] = [];
@@ -186,7 +201,7 @@ export class TriggerModule {
    * Execute a single trigger rule
    */
   private async executeRule(
-    rule: any,
+    rule: TriggerRule,
     context: TriggerContext
   ): Promise<TriggerResult> {
     const startTime = Date.now();
@@ -240,12 +255,12 @@ export class TriggerModule {
    * Execute a single action
    */
   private async executeAction(
-    action: any,
+    action: TriggerRule["actions"][number],
     context: TriggerContext
   ): Promise<{
     type: string;
     success: boolean;
-    result?: any;
+    result?: string | unknown[] | Record<string, unknown>;
     error?: Error;
   }> {
     try {
@@ -278,15 +293,15 @@ export class TriggerModule {
   }
 
   /**
-   * Execute correction action
+   * Execute correction action with retry and circuit breaker
    */
   private async executeCorrection(
-    action: any,
+    action: TriggerRule["actions"][number],
     context: TriggerContext
   ): Promise<{
     type: string;
     success: boolean;
-    result?: any;
+    result?: string | unknown[] | Record<string, unknown>;
     error?: Error;
   }> {
     if (!this.config.autoCorrect) {
@@ -299,6 +314,9 @@ export class TriggerModule {
 
     try {
       const correctorName = action.target;
+      if (!correctorName) {
+        throw new Error("Corrector action missing target");
+      }
       const corrector = this.correctorRegistry.get(correctorName);
 
       if (!corrector) {
@@ -313,9 +331,23 @@ export class TriggerModule {
         };
       }
 
-      const correctionResults = await this.correctorRegistry.applyCorrections(
-        context.filePath,
-        context.error
+      // Get or create circuit breaker for this corrector
+      if (!this.circuitBreakers.has(correctorName)) {
+        this.circuitBreakers.set(correctorName, new CircuitBreaker(5, 60000));
+      }
+      const circuitBreaker = this.circuitBreakers.get(correctorName)!;
+
+      // Execute with retry + circuit breaker
+      const correctionResults = await circuitBreaker.execute(() =>
+        retryWithBackoff(
+          () =>
+            this.correctorRegistry.applyCorrections(
+              context.filePath,
+              context.error
+            ),
+          3,
+          1000
+        )
       );
 
       const success = correctionResults.every((result) => result.success);
@@ -338,25 +370,35 @@ export class TriggerModule {
    * Execute notification action
    */
   private async executeNotification(
-    action: any,
+    action: TriggerRule["actions"][number],
     context: TriggerContext
   ): Promise<{
     type: string;
     success: boolean;
-    result?: any;
+    result?: string | unknown[] | Record<string, unknown>;
     error?: Error;
   }> {
     try {
-      const channels = action.target.split(",").map((c: string) => c.trim());
-      const level = action.config?.level || "info";
+      if (!action.target) {
+        throw new Error("Notify action missing target channels");
+      }
+      const channels = action.target
+        .split(",")
+        .map((c: string) => c.trim()) as NotificationChannel[];
+      const level =
+        (action.config?.level as NotificationLevel) || NotificationLevel.INFO;
 
       // Create notification data based on context
       let notificationData;
 
       if (context.error) {
+        const errorObj =
+          context.error instanceof Error
+            ? context.error
+            : new Error(context.error.message);
         notificationData = NotificationUtils.createErrorNotification(
           `Trigger Rule: ${context.eventType}`,
-          context.error,
+          errorObj,
           context.filePath,
           { ruleId: context.metadata?.ruleId }
         );
@@ -394,16 +436,16 @@ export class TriggerModule {
    * Execute logging action
    */
   private async executeLogging(
-    action: any,
+    action: TriggerRule["actions"][number],
     context: TriggerContext
   ): Promise<{
     type: string;
     success: boolean;
-    result?: any;
+    result?: string | unknown[] | Record<string, unknown>;
     error?: Error;
   }> {
     try {
-      const logLevel = action.config?.level || "info";
+      const logLevel = (action.config?.level as string) || "info";
       const message = `Trigger rule executed: ${context.eventType} for ${context.filePath}`;
 
       logger.log(logLevel, message, {
@@ -430,19 +472,21 @@ export class TriggerModule {
    * Execute skip action
    */
   private async executeSkip(
-    action: any,
+    action: TriggerRule["actions"][number],
     context: TriggerContext
   ): Promise<{
     type: string;
     success: boolean;
-    result?: any;
+    result?: string | unknown[] | Record<string, unknown>;
     error?: Error;
   }> {
     try {
       // Check skip conditions
       if (action.config?.maxFileSize) {
         const stats = await Utils.fs.stat(context.filePath);
-        const maxSizeBytes = Utils.parseFileSize(action.config.maxFileSize);
+        const maxSizeBytes = Utils.parseFileSize(
+          String(action.config.maxFileSize)
+        );
         if (stats.size > maxSizeBytes) {
           logger.info(`Skipping file ${context.filePath} due to size limit`);
           return {
@@ -474,12 +518,12 @@ export class TriggerModule {
    * Execute custom action
    */
   private async executeCustomAction(
-    action: any,
+    action: TriggerRule["actions"][number],
     context: TriggerContext
   ): Promise<{
     type: string;
     success: boolean;
-    result?: any;
+    result?: string | unknown[] | Record<string, unknown>;
     error?: Error;
   }> {
     try {
@@ -492,13 +536,44 @@ export class TriggerModule {
       }
 
       if (script && typeof script === "string") {
-        const { execSync } = await import("child_process");
-        const cmd = script
-          .replace(/\{\{filePath\}\}/g, context.filePath)
-          .replace(/\{\{eventType\}\}/g, context.eventType);
-        const output = execSync(cmd, { encoding: "utf-8", timeout: 30000 });
-        logger.info(`Custom script executed: ${script}`);
-        return { type: "custom", success: true, result: output.trim() };
+        // Whitelist: only allow known safe commands
+        const allowedCommands = [
+          "npx eslint",
+          "npx prettier",
+          "npm run",
+          "node",
+        ];
+        const isAllowed = allowedCommands.some((cmd) =>
+          script.trim().startsWith(cmd)
+        );
+
+        if (!isAllowed) {
+          logger.warn(
+            `Script not in whitelist, blocking: ${script.substring(0, 100)}`
+          );
+          return {
+            type: "custom",
+            success: false,
+            error: new Error(
+              `Script not allowed. Whitelist: ${allowedCommands.join(", ")}`
+            ),
+          };
+        }
+
+        // Parse command and args from script string safely
+        const parts = script.split(/\s+/);
+        const cmd = parts[0];
+        const args = parts
+          .slice(1)
+          .map((a: string) =>
+            a
+              .replace(/\{\{filePath\}\}/g, context.filePath)
+              .replace(/\{\{eventType\}\}/g, context.eventType)
+          );
+
+        logger.info(`Executing whitelisted script: ${cmd} ${args.join(" ")}`);
+        const { stdout } = await safeSpawn(cmd, args, { timeout: 30000 });
+        return { type: "custom", success: true, result: stdout.trim() };
       }
 
       throw new Error(
@@ -518,7 +593,7 @@ export class TriggerModule {
    */
   private async sendErrorNotification(
     title: string,
-    error: any,
+    error: unknown,
     context: TriggerContext
   ): Promise<void> {
     try {
@@ -548,7 +623,12 @@ export class TriggerModule {
     enabledRuleCount: number;
     correctorCount: number;
     notifierCount: number;
-    ruleStats: any;
+    ruleStats: {
+      totalRules: number;
+      enabledRules: number;
+      rulesByPriority: Record<string, number>;
+      activeCooldowns: number;
+    };
   } {
     const ruleStats = this.ruleManager.getStats();
 
@@ -574,7 +654,7 @@ export class TriggerModule {
   /**
    * Add a custom rule
    */
-  async addRule(rule: any): Promise<void> {
+  async addRule(rule: TriggerRule): Promise<void> {
     await this.ruleManager.addRule(rule);
   }
 
@@ -597,9 +677,14 @@ export class TriggerModule {
  * Factory function to create a trigger module
  */
 export function createTriggerModule(
-  config?: TriggerModuleConfig
+  config?: TriggerModuleConfig,
+  dependencies?: {
+    ruleManager?: TriggerRuleManager;
+    correctorRegistry?: CorrectorRegistry;
+    notifierRegistry?: NotifierRegistry;
+  }
 ): TriggerModule {
-  return new TriggerModule(config);
+  return new TriggerModule(config, dependencies);
 }
 
 /**

@@ -60,15 +60,23 @@ const logger = winston.createLogger({
 
 // If we're not in production then log to the console
 if (process.env.NODE_ENV !== "production") {
+  const logFormat =
+    process.env.LOG_FORMAT === "json"
+      ? winston.format.combine(
+          winston.format.timestamp(),
+          winston.format.json()
+        )
+      : winston.format.combine(
+          winston.format.colorize(),
+          winston.format.simple(),
+          winston.format.printf(({ level, message, timestamp }) => {
+            return `${timestamp} ${level}: ${message}`;
+          })
+        );
+
   logger.add(
     new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.colorize(),
-        winston.format.simple(),
-        winston.format.printf(({ level, message, timestamp }) => {
-          return `${timestamp} ${level}: ${message}`;
-        })
-      ),
+      format: logFormat,
     })
   );
 }
@@ -83,7 +91,7 @@ export const createChildLogger = (moduleName: string) => {
 export const logFileOperation = (
   operation: string,
   filePath: string,
-  details?: any
+  details?: Record<string, unknown>
 ) => {
   logger.info(`File ${operation}: ${filePath}`, details);
 };

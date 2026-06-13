@@ -404,8 +404,14 @@ export const PredefinedScripts = {
 /**
  * Create script runner with predefined scripts
  */
-export function createScriptRunner(): ScriptRunner {
+export function createScriptRunner(options?: {
+  skipDefaults?: boolean;
+}): ScriptRunner {
   const runner = new ScriptRunner();
+
+  if (options?.skipDefaults) {
+    return runner;
+  }
 
   // Add predefined scripts
   runner.addScript(PredefinedScripts.eslintFix());

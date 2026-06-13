@@ -1,8 +1,18 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "@jest/globals";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+} from "@jest/globals";
 import fs from "fs-extra";
 import path from "path";
 import os from "os";
-import { PreventionConfigManager, createPreventionConfig } from "../../src/prevention/config.js";
+import {
+  PreventionConfigManager,
+  createPreventionConfig,
+} from "../../src/prevention/config.js";
 
 const TEST_DIR = path.join(os.tmpdir(), "watcher-test-config");
 
@@ -22,8 +32,8 @@ describe("PreventionConfigManager", () => {
   });
 
   describe("constructor", () => {
-    it("should use default config when file does not exist", () => {
-      const manager = new PreventionConfigManager(configPath);
+    it("should use default config when file does not exist", async () => {
+      const manager = await PreventionConfigManager.create(configPath);
       const config = manager.getConfig();
       expect(config.enabled).toBe(true);
       expect(config.rules.length).toBeGreaterThan(0);
@@ -53,7 +63,7 @@ describe("PreventionConfigManager", () => {
         },
       };
       await fs.writeJson(configPath, validConfig);
-      const manager = new PreventionConfigManager(configPath);
+      const manager = await PreventionConfigManager.create(configPath);
       const config = manager.getConfig();
       expect(config.rules).toHaveLength(1);
       expect(config.rules[0].id).toBe("test-rule");
@@ -61,15 +71,15 @@ describe("PreventionConfigManager", () => {
 
     it("should fall back to defaults on invalid file", async () => {
       await fs.writeFile(configPath, "{ broken json");
-      const manager = new PreventionConfigManager(configPath);
+      const manager = await PreventionConfigManager.create(configPath);
       const config = manager.getConfig();
       expect(config.rules.length).toBeGreaterThan(0);
     });
   });
 
   describe("getEnabledRules", () => {
-    it("should return only enabled rules", () => {
-      const manager = new PreventionConfigManager(configPath);
+    it("should return only enabled rules", async () => {
+      const manager = await PreventionConfigManager.create(configPath);
       const enabled = manager.getEnabledRules();
       expect(enabled.length).toBeGreaterThan(0);
       enabled.forEach((rule) => {
@@ -79,25 +89,25 @@ describe("PreventionConfigManager", () => {
   });
 
   describe("getRulesForFile", () => {
-    it("should return rules matching file extension", () => {
-      const manager = new PreventionConfigManager(configPath);
-      const tsRules = manager.getRulesForFile("test.ts");
+    it("should return rules matching file extension", async () => {
+      const manager = await PreventionConfigManager.create(configPath);
+      const tsRules = await manager.getRulesForFile("test.ts");
       expect(tsRules.length).toBeGreaterThan(0);
       tsRules.forEach((rule) => {
         expect(rule.conditions?.fileExtensions).toContain("ts");
       });
     });
 
-    it("should return empty for unmatched extension", () => {
-      const manager = new PreventionConfigManager(configPath);
-      const rules = manager.getRulesForFile("image.png");
+    it("should return empty for unmatched extension", async () => {
+      const manager = await PreventionConfigManager.create(configPath);
+      const rules = await manager.getRulesForFile("image.png");
       expect(rules).toHaveLength(0);
     });
   });
 
   describe("addRule", () => {
     it("should add a new rule", async () => {
-      const manager = new PreventionConfigManager(configPath);
+      const manager = await PreventionConfigManager.create(configPath);
       const initialCount = manager.getConfig().rules.length;
       await manager.addRule({
         id: "new-rule",
@@ -113,7 +123,7 @@ describe("PreventionConfigManager", () => {
     });
 
     it("should update existing rule with same id", async () => {
-      const manager = new PreventionConfigManager(configPath);
+      const manager = await PreventionConfigManager.create(configPath);
       await manager.addRule({
         id: "update-rule",
         name: "Original",
@@ -134,7 +144,9 @@ describe("PreventionConfigManager", () => {
         validators: [],
         scripts: [],
       });
-      const rule = manager.getConfig().rules.find((r) => r.id === "update-rule");
+      const rule = manager
+        .getConfig()
+        .rules.find((r) => r.id === "update-rule");
       expect(rule?.name).toBe("Updated");
       expect(rule?.enabled).toBe(false);
     });
@@ -142,7 +154,7 @@ describe("PreventionConfigManager", () => {
 
   describe("removeRule", () => {
     it("should remove a rule by id", async () => {
-      const manager = new PreventionConfigManager(configPath);
+      const manager = await PreventionConfigManager.create(configPath);
       await manager.addRule({
         id: "to-remove",
         name: "To Remove",
@@ -155,11 +167,13 @@ describe("PreventionConfigManager", () => {
       });
       const removed = await manager.removeRule("to-remove");
       expect(removed).toBe(true);
-      expect(manager.getConfig().rules.find((r) => r.id === "to-remove")).toBeUndefined();
+      expect(
+        manager.getConfig().rules.find((r) => r.id === "to-remove")
+      ).toBeUndefined();
     });
 
     it("should return false for non-existent rule", async () => {
-      const manager = new PreventionConfigManager(configPath);
+      const manager = await PreventionConfigManager.create(configPath);
       const removed = await manager.removeRule("non-existent");
       expect(removed).toBe(false);
     });
@@ -167,7 +181,7 @@ describe("PreventionConfigManager", () => {
 
   describe("toggleRule", () => {
     it("should toggle rule enabled status", async () => {
-      const manager = new PreventionConfigManager(configPath);
+      const manager = await PreventionConfigManager.create(configPath);
       await manager.addRule({
         id: "toggle-test",
         name: "Toggle Test",
@@ -180,14 +194,16 @@ describe("PreventionConfigManager", () => {
       });
       const toggled = await manager.toggleRule("toggle-test", false);
       expect(toggled).toBe(true);
-      const rule = manager.getConfig().rules.find((r) => r.id === "toggle-test");
+      const rule = manager
+        .getConfig()
+        .rules.find((r) => r.id === "toggle-test");
       expect(rule?.enabled).toBe(false);
     });
   });
 
   describe("getStats", () => {
-    it("should return correct statistics", () => {
-      const manager = new PreventionConfigManager(configPath);
+    it("should return correct statistics", async () => {
+      const manager = await PreventionConfigManager.create(configPath);
       const stats = manager.getStats();
       expect(stats.totalRules).toBeGreaterThan(0);
       expect(stats.enabledRules).toBeGreaterThan(0);
@@ -198,8 +214,7 @@ describe("PreventionConfigManager", () => {
 
   describe("reloadConfig", () => {
     it("should reload configuration from file", async () => {
-      const manager = new PreventionConfigManager(configPath);
-      const initialRules = manager.getConfig().rules.length;
+      const manager = await PreventionConfigManager.create(configPath);
       const newConfig = {
         enabled: true,
         rules: [
@@ -229,8 +244,8 @@ describe("PreventionConfigManager", () => {
   });
 
   describe("createPreventionConfig", () => {
-    it("should create a config manager instance", () => {
-      const manager = createPreventionConfig(configPath);
+    it("should create a config manager instance", async () => {
+      const manager = await createPreventionConfig(configPath);
       expect(manager).toBeInstanceOf(PreventionConfigManager);
     });
   });

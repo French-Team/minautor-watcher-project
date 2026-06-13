@@ -3,7 +3,6 @@ import fs from "fs-extra";
 import path from "path";
 import os from "os";
 import {
-  FileFilter,
   FilterPresets,
   createFileFilter,
   FileEvent,

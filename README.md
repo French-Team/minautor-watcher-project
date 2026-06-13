@@ -1,4 +1,6 @@
-# Watcher
+![minautor watcher project logo](./assets/logo-minautor.png)
+
+# minautor watcher project
 
 Un service de surveillance de code modulaire, automatisé et portable. Détecte les changements en temps réel, prévient les erreurs avant propagation, et corrige automatiquement ce qui peut l'être — en arrière-plan, sans interruption du développement.
 
@@ -26,7 +28,7 @@ Un service de surveillance de code modulaire, automatisé et portable. Détecte 
 
 ## Philosophie
 
-Watcher est né d'un constat simple : la qualité du code ne devrait pas reposer uniquement sur la discipline de l'équipe. Au lieu d'attendre une revue de code ou une CI distante, Watcher **agit localement, en continu**, en trois temps :
+minautor watcher project est né d'un constat simple : la qualité du code ne devrait pas reposer uniquement sur la discipline de l'équipe. Au lieu d'attendre une revue de code ou une CI distante, minautor watcher project **agit localement, en continu**, en trois temps :
 
 1. **Détecter** les changements dès qu'ils surviennent
 2. **Prévenir** les mauvaises pratiques par validation immédiate
@@ -50,8 +52,8 @@ L'objectif n'est pas de remplacer les outils existants (ESLint, Prettier, hooks 
 └─────┬──────┴──────┬───────┴──────────┬───────────────┘
       │             │                  │
       └─────────────┴──────────────────┘
-                   │
-            Event Bus (DetectionEventBus)
+                    │
+             Event Bus (DetectionEventBus)
 ```
 
 Chaque module est indépendant, peut être utilisé séparément, et communique via un bus d'événements partagé.
@@ -378,5 +380,5 @@ npm run lint          # ESLint
     <a href="./watcher-requirements.md">Exigences</a>
   </sub>
   <br>
-  <sub>Watcher Service · MIT</sub>
+  <sub>minautor watcher project · MIT</sub>
 </div>
