@@ -22,9 +22,11 @@ export class Watcher extends EventEmitter {
     watcher = null;
     config;
     processingQueue = new Map();
+    maxQueueSize;
     constructor(config) {
         super();
         this.config = config;
+        this.maxQueueSize = config.maxQueueSize || 1000;
     }
     /**
      * Start watching the specified directory
@@ -54,7 +56,7 @@ export class Watcher extends EventEmitter {
             });
             // Set up event listeners
             this.setupEventListeners();
-            logger.info("Watcher started successfully");
+            logger.success("Watcher started successfully");
         }
         catch (error) {
             logger.error("Failed to start watcher:", error);
@@ -74,7 +76,7 @@ export class Watcher extends EventEmitter {
                 this.processingQueue.clear();
                 await this.watcher.close();
                 this.watcher = null;
-                logger.info("Watcher stopped successfully");
+                logger.success("Watcher stopped successfully");
             }
         }
         catch (error) {
@@ -131,6 +133,18 @@ export class Watcher extends EventEmitter {
         const existingTimer = this.processingQueue.get(filePath);
         if (existingTimer) {
             clearTimeout(existingTimer);
+        }
+        // LRU eviction: if queue is full, remove oldest entry (first key in Map)
+        if (this.processingQueue.size >= this.maxQueueSize &&
+            !this.processingQueue.has(filePath)) {
+            const oldestKey = this.processingQueue.keys().next().value;
+            if (oldestKey) {
+                const oldestTimer = this.processingQueue.get(oldestKey);
+                if (oldestTimer)
+                    clearTimeout(oldestTimer);
+                this.processingQueue.delete(oldestKey);
+                logger.warn(`Queue full (${this.maxQueueSize}), evicted oldest entry: ${oldestKey}`);
+            }
         }
         // Set new timer for debounced processing
         const timer = setTimeout(() => {

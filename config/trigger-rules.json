@@ -7,12 +7,6 @@
   },
   "corrections": [
     {
-      "ruleId": "no-unused-vars",
-      "enabled": true,
-      "action": "remove",
-      "description": "Remove unused variables automatically"
-    },
-    {
       "ruleId": "prefer-const",
       "enabled": true,
       "action": "replace",
@@ -24,15 +18,25 @@
       "ruleId": "no-console-logs",
       "enabled": true,
       "action": "replace",
-      "pattern": "",
+      "pattern": "console.log(",
       "replacement": "logger.info(",
       "description": "Replace console.log with Winston logger"
     },
     {
-      "ruleId": "no-duplicate-imports",
+      "ruleId": "no-console-warn",
       "enabled": true,
-      "action": "merge",
-      "description": "Merge duplicate imports from same module"
+      "action": "replace",
+      "pattern": "console.warn(",
+      "replacement": "logger.warn(",
+      "description": "Replace console.warn with Winston logger"
+    },
+    {
+      "ruleId": "no-console-error",
+      "enabled": true,
+      "action": "replace",
+      "pattern": "console.error(",
+      "replacement": "logger.error(",
+      "description": "Replace console.error with Winston logger"
     },
     {
       "ruleId": "eslint-auto-fix",
@@ -51,7 +55,7 @@
   "notifications": {
     "onSuccess": false,
     "onFailure": true,
-    "channels": ["slack", "email"],
+    "channels": ["console"],
     "throttle": 300000
   },
   "conditions": [

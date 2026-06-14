@@ -30,7 +30,7 @@ export interface ProcessingEvent {
     duration?: number;
     success?: boolean;
     error?: Error;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
 }
 export interface BatchEvent {
     files: FileEvent[];
@@ -72,11 +72,11 @@ export declare class DetectionEventBus extends EventEmitter {
     /**
      * Emit processing completed event
      */
-    emitProcessingCompleted(file: FileEvent, processor: string, metadata?: Record<string, any>): void;
+    emitProcessingCompleted(file: FileEvent, processor: string, metadata?: Record<string, unknown>): void;
     /**
      * Emit processing failed event
      */
-    emitProcessingFailed(file: FileEvent, processor: string, error: Error, metadata?: Record<string, any>): void;
+    emitProcessingFailed(file: FileEvent, processor: string, error: Error, metadata?: Record<string, unknown>): void;
     /**
      * Emit batch started event
      */
@@ -118,6 +118,6 @@ export declare class EventUtils {
 /**
  * Event handler decorators for cleaner code
  */
-export declare function OnEvent(event: DetectionEvent): (target: any, propertyKey: string, descriptor: PropertyDescriptor) => PropertyDescriptor;
+export declare function OnEvent(event: DetectionEvent): (target: Record<string, (...args: never[]) => unknown>, propertyKey: string, descriptor: PropertyDescriptor) => PropertyDescriptor;
 export default DetectionEventBus;
 //# sourceMappingURL=events.d.ts.map

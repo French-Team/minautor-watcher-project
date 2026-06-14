@@ -1,13 +1,94 @@
 import fs from "fs-extra";
 import path from "path";
-import { exec } from "child_process";
-import { promisify } from "util";
-import { Utils } from "../shared/utils.js";
+import { Utils, safeSpawn } from "../shared/utils.js";
 import { createChildLogger } from "../shared/logger.js";
-const execAsync = promisify(exec);
 const logger = createChildLogger("trigger-correctors");
+/**
+ * File lock map to serialize corrections per file.
+ * Prevents concurrent writes from ESLint and Prettier on the same file.
+ */
+const fileLocks = new Map();
+/**
+ * Execute a function while holding a file lock.
+ * Serializes writes to the same file to prevent race conditions.
+ */
+async function withFileLock(filePath, fn) {
+    // Wait for any pending lock on this file
+    const prev = fileLocks.get(filePath);
+    if (prev) {
+        await prev;
+    }
+    // Create a new promise for this lock
+    let release;
+    const current = new Promise((resolve) => {
+        release = resolve;
+    });
+    fileLocks.set(filePath, current);
+    try {
+        return await fn();
+    }
+    finally {
+        release();
+        // Clean up if we're still the holder
+        if (fileLocks.get(filePath) === current) {
+            fileLocks.delete(filePath);
+        }
+    }
+}
 function escapeRegex(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+/**
+ * Write file content with automatic backup.
+ * If backup is true, creates a .bak file before writing.
+ * Returns the backup path if created.
+ */
+async function writeFileWithBackup(filePath, content, backup = true) {
+    if (!backup) {
+        await fs.writeFile(filePath, content);
+        return null;
+    }
+    const backupPath = filePath + ".bak";
+    if (await fs.pathExists(filePath)) {
+        await fs.copy(filePath, backupPath);
+    }
+    await fs.writeFile(filePath, content);
+    return backupPath;
+}
+/**
+ * Restore file from backup. Returns true if restored.
+ */
+export async function restoreFromBackup(filePath) {
+    const backupPath = filePath + ".bak";
+    if (await fs.pathExists(backupPath)) {
+        await fs.move(backupPath, filePath, { overwrite: true });
+        logger.info(`Restored ${filePath} from backup`);
+        return true;
+    }
+    return false;
+}
+/**
+ * Clean up .bak files older than maxAgeMs.
+ */
+export async function cleanupBackups(dir, maxAgeMs = 24 * 60 * 60 * 1000) {
+    let cleaned = 0;
+    try {
+        const files = await fs.readdir(dir);
+        for (const file of files) {
+            if (!file.endsWith(".bak"))
+                continue;
+            const filePath = path.join(dir, file);
+            const stat = await fs.stat(filePath);
+            if (Date.now() - stat.mtimeMs > maxAgeMs) {
+                await fs.remove(filePath);
+                cleaned++;
+            }
+        }
+    }
+    catch {
+        // ignore errors during cleanup
+    }
+    return cleaned;
 }
 /**
  * Base corrector class
@@ -18,6 +99,16 @@ export class BaseCorrector {
     constructor(name, config) {
         this.name = name;
         this.config = config;
+    }
+    /**
+     * Apply corrections to multiple files in batch (override for true batch processing)
+     */
+    async applyBatchCorrection(filePaths, error, dryRun) {
+        const results = new Map();
+        for (const filePath of filePaths) {
+            results.set(filePath, await this.applyCorrection(filePath, error, dryRun));
+        }
+        return results;
     }
     /**
      * Get corrector name
@@ -45,7 +136,7 @@ export class TextReplacementCorrector extends BaseCorrector {
     constructor(config) {
         super(config.id, config);
     }
-    canCorrect(filePath, error) {
+    canCorrect(filePath, _error) {
         if (!this.isEnabled())
             return false;
         const extension = Utils.getFileExtension(filePath);
@@ -65,7 +156,7 @@ export class TextReplacementCorrector extends BaseCorrector {
         }
         return true;
     }
-    async applyCorrection(filePath, error) {
+    async applyCorrection(filePath, _error, dryRun = false) {
         const startTime = Date.now();
         const result = {
             success: false,
@@ -74,6 +165,11 @@ export class TextReplacementCorrector extends BaseCorrector {
             executionTime: 0,
         };
         try {
+            if (!this.isEnabled()) {
+                logger.debug(`Corrector ${this.name} is disabled, skipping`);
+                result.success = true;
+                return result;
+            }
             logger.info(`Applying text replacement corrections to ${filePath}`);
             // Read original content
             const originalContent = await fs.readFile(filePath, "utf-8");
@@ -109,7 +205,9 @@ export class TextReplacementCorrector extends BaseCorrector {
             }
             // Write corrected content if there were changes
             if (hasChanges && correctedContent !== originalContent) {
-                await fs.writeFile(filePath, correctedContent);
+                if (!dryRun) {
+                    await writeFileWithBackup(filePath, correctedContent);
+                }
                 result.corrected = true;
                 result.correctedContent = correctedContent;
                 logger.info(`Applied ${result.changes.length} corrections to ${filePath}`);
@@ -130,19 +228,20 @@ export class TextReplacementCorrector extends BaseCorrector {
         const details = [];
         if (action.target === "all") {
             // Replace all occurrences
-            const regex = new RegExp(escapeRegex(action.content), "g");
+            const searchContent = action.content ?? "";
+            const regex = new RegExp(escapeRegex(searchContent), "g");
             const newContent = content.replace(regex, action.newContent || "");
             if (newContent !== content) {
                 // Calculate approximate line/column for the change
                 const lines = content.split("\n");
                 for (let i = 0; i < lines.length; i++) {
-                    if (lines[i].includes(action.content)) {
+                    if (lines[i].includes(searchContent)) {
                         details.push({
                             type: "replace",
                             line: i + 1,
-                            column: lines[i].indexOf(action.content) + 1,
-                            oldText: action.content,
-                            newText: action.newText || "",
+                            column: lines[i].indexOf(searchContent) + 1,
+                            oldText: searchContent,
+                            newText: action.newContent || "",
                         });
                     }
                 }
@@ -225,13 +324,13 @@ export class TextReplacementCorrector extends BaseCorrector {
  * Command execution corrector
  */
 export class CommandCorrector extends BaseCorrector {
-    canCorrect(filePath, error) {
+    canCorrect(_filePath, _error) {
         if (!this.isEnabled())
             return false;
         // Check if any action is a command execution
         return this.config.actions.some((action) => action.type === "run-command");
     }
-    async applyCorrection(filePath, error) {
+    async applyCorrection(filePath, _error, _dryRun = false) {
         const startTime = Date.now();
         const result = {
             success: false,
@@ -254,7 +353,7 @@ export class CommandCorrector extends BaseCorrector {
                             oldText: "file-content",
                             newText: "corrected-by-command",
                         });
-                        logger.info(`Command correction successful: ${action.command}`);
+                        logger.success(`Command correction successful: ${action.command}`);
                     }
                     else {
                         logger.error(`Command correction failed: ${action.command} - ${commandResult.error}`);
@@ -277,8 +376,11 @@ export class CommandCorrector extends BaseCorrector {
             const command = action.command;
             const args = action.args || [];
             const cwd = path.dirname(filePath);
+            if (!command) {
+                return { success: false, error: new Error("No command specified") };
+            }
             logger.debug(`Executing command: ${command} ${args.join(" ")} in ${cwd}`);
-            const { stdout, stderr } = await execAsync(`${command} ${args.join(" ")}`, { cwd });
+            const { stderr } = await safeSpawn(command, args, { cwd });
             if (stderr) {
                 logger.warn(`Command stderr: ${stderr}`);
             }
@@ -299,13 +401,13 @@ export class ESLintFixCorrector extends BaseCorrector {
     constructor(config) {
         super(config.id, config);
     }
-    canCorrect(filePath, error) {
+    canCorrect(filePath, _error) {
         if (!this.isEnabled())
             return false;
         const extension = Utils.getFileExtension(filePath);
         return ["js", "ts", "jsx", "tsx"].includes(extension);
     }
-    async applyCorrection(filePath, error) {
+    async applyCorrection(filePath, _error, _dryRun = false) {
         const startTime = Date.now();
         const result = {
             success: false,
@@ -315,26 +417,108 @@ export class ESLintFixCorrector extends BaseCorrector {
         };
         try {
             logger.info(`Running ESLint auto-fix on ${filePath}`);
-            const { stdout, stderr } = await execAsync(`npx eslint --fix "${filePath}"`);
-            result.corrected = !stderr || !stderr.includes("error");
-            result.success = true;
-            if (stderr) {
-                logger.warn(`ESLint stderr: ${stderr}`);
-            }
-            if (stdout) {
-                logger.debug(`ESLint output: ${stdout}`);
-            }
-            // Read the corrected content
-            if (result.corrected) {
-                result.correctedContent = await fs.readFile(filePath, "utf-8");
-            }
+            // Serialize writes to prevent concurrent ESLint + Prettier conflicts
+            await withFileLock(filePath, async () => {
+                const { stderr } = await safeSpawn("npx", [
+                    "eslint",
+                    "--fix",
+                    filePath,
+                ]);
+                result.corrected = !stderr || !stderr.includes("error");
+                result.success = true;
+                if (stderr) {
+                    logger.warn(`ESLint stderr: ${stderr}`);
+                }
+                // Read the corrected content
+                if (result.corrected) {
+                    result.correctedContent = await fs.readFile(filePath, "utf-8");
+                }
+            });
         }
         catch (error) {
-            logger.error(`ESLint auto-fix failed for ${filePath}:`, error);
+            const errorCode = error instanceof Error && "code" in error
+                ? error.code
+                : undefined;
+            if (errorCode === "ENOENT") {
+                logger.warn(`ESLint auto-fix skipped for ${filePath}: npx not found in PATH`);
+            }
+            else {
+                logger.error(`ESLint auto-fix failed for ${filePath}:`, error);
+            }
             result.error = error instanceof Error ? error : new Error(String(error));
         }
         result.executionTime = Date.now() - startTime;
         return result;
+    }
+    /**
+     * Batch ESLint fix: process multiple files in a single invocation
+     */
+    async applyBatchCorrection(filePaths, _error) {
+        const results = new Map();
+        const startTime = Date.now();
+        if (filePaths.length === 0)
+            return results;
+        if (filePaths.length === 1) {
+            results.set(filePaths[0], await this.applyCorrection(filePaths[0], _error));
+            return results;
+        }
+        try {
+            logger.info(`Running ESLint batch fix on ${filePaths.length} files`);
+            const BATCH_SIZE = 50;
+            for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
+                const batch = filePaths.slice(i, i + BATCH_SIZE);
+                const { stderr } = await safeSpawn("npx", [
+                    "eslint",
+                    "--fix",
+                    ...batch,
+                ]);
+                const hasError = stderr && stderr.includes("error");
+                for (const filePath of batch) {
+                    const result = {
+                        success: true,
+                        corrected: !hasError,
+                        changes: [],
+                        executionTime: Date.now() - startTime,
+                    };
+                    if (result.corrected) {
+                        try {
+                            result.correctedContent = await fs.readFile(filePath, "utf-8");
+                        }
+                        catch {
+                            result.correctedContent = undefined;
+                        }
+                    }
+                    results.set(filePath, result);
+                }
+                if (stderr) {
+                    logger.warn(`ESLint batch stderr: ${stderr}`);
+                }
+            }
+        }
+        catch (error) {
+            const errorCode = error instanceof Error && "code" in error
+                ? error.code
+                : undefined;
+            if (errorCode === "ENOENT") {
+                logger.warn("ESLint batch fix skipped: npx not found in PATH");
+            }
+            else {
+                logger.error(`ESLint batch fix failed:`, error);
+            }
+            const err = error instanceof Error ? error : new Error(String(error));
+            for (const filePath of filePaths) {
+                if (!results.has(filePath)) {
+                    results.set(filePath, {
+                        success: false,
+                        corrected: false,
+                        changes: [],
+                        executionTime: Date.now() - startTime,
+                        error: err,
+                    });
+                }
+            }
+        }
+        return results;
     }
 }
 /**
@@ -344,13 +528,13 @@ export class PrettierFormatCorrector extends BaseCorrector {
     constructor(config) {
         super(config.id, config);
     }
-    canCorrect(filePath, error) {
+    canCorrect(filePath, _error) {
         if (!this.isEnabled())
             return false;
         const extension = Utils.getFileExtension(filePath);
         return ["js", "ts", "jsx", "tsx", "json", "md", "css", "scss"].includes(extension);
     }
-    async applyCorrection(filePath, error) {
+    async applyCorrection(filePath, _error, _dryRun = false) {
         const startTime = Date.now();
         const result = {
             success: false,
@@ -360,24 +544,96 @@ export class PrettierFormatCorrector extends BaseCorrector {
         };
         try {
             logger.info(`Running Prettier format on ${filePath}`);
-            const { stdout, stderr } = await execAsync(`npx prettier --write "${filePath}"`);
-            result.corrected = true;
-            result.success = true;
-            if (stderr) {
-                logger.warn(`Prettier stderr: ${stderr}`);
-            }
-            if (stdout) {
-                logger.debug(`Prettier output: ${stdout}`);
-            }
-            // Read the formatted content
-            result.correctedContent = await fs.readFile(filePath, "utf-8");
+            // Serialize writes to prevent concurrent ESLint + Prettier conflicts
+            await withFileLock(filePath, async () => {
+                const { stderr } = await safeSpawn("npx", [
+                    "prettier",
+                    "--write",
+                    filePath,
+                ]);
+                result.corrected = true;
+                result.success = true;
+                if (stderr) {
+                    logger.warn(`Prettier stderr: ${stderr}`);
+                }
+                // Read the formatted content
+                result.correctedContent = await fs.readFile(filePath, "utf-8");
+            });
         }
         catch (error) {
-            logger.error(`Prettier format failed for ${filePath}:`, error);
+            const errorCode = error instanceof Error && "code" in error
+                ? error.code
+                : undefined;
+            if (errorCode === "ENOENT") {
+                logger.warn(`Prettier format skipped for ${filePath}: npx not found in PATH`);
+            }
+            else {
+                logger.error(`Prettier format failed for ${filePath}:`, error);
+            }
             result.error = error instanceof Error ? error : new Error(String(error));
         }
         result.executionTime = Date.now() - startTime;
         return result;
+    }
+    /**
+     * Batch Prettier format: process multiple files in a single invocation
+     */
+    async applyBatchCorrection(filePaths, _error) {
+        const results = new Map();
+        const startTime = Date.now();
+        if (filePaths.length === 0)
+            return results;
+        if (filePaths.length === 1) {
+            results.set(filePaths[0], await this.applyCorrection(filePaths[0], _error));
+            return results;
+        }
+        try {
+            logger.info(`Running Prettier batch format on ${filePaths.length} files`);
+            const BATCH_SIZE = 50;
+            for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
+                const batch = filePaths.slice(i, i + BATCH_SIZE);
+                await safeSpawn("npx", ["prettier", "--write", ...batch]);
+                for (const filePath of batch) {
+                    const result = {
+                        success: true,
+                        corrected: true,
+                        changes: [],
+                        executionTime: Date.now() - startTime,
+                    };
+                    try {
+                        result.correctedContent = await fs.readFile(filePath, "utf-8");
+                    }
+                    catch {
+                        result.correctedContent = undefined;
+                    }
+                    results.set(filePath, result);
+                }
+            }
+        }
+        catch (error) {
+            const errorCode = error instanceof Error && "code" in error
+                ? error.code
+                : undefined;
+            if (errorCode === "ENOENT") {
+                logger.warn("Prettier format skipped: npx not found in PATH");
+            }
+            else {
+                logger.error(`Prettier batch format failed:`, error);
+            }
+            const err = error instanceof Error ? error : new Error(String(error));
+            for (const filePath of filePaths) {
+                if (!results.has(filePath)) {
+                    results.set(filePath, {
+                        success: false,
+                        corrected: false,
+                        changes: [],
+                        executionTime: Date.now() - startTime,
+                        error: err,
+                    });
+                }
+            }
+        }
+        return results;
     }
 }
 /**
@@ -390,7 +646,7 @@ export class CorrectorRegistry {
      */
     register(name, corrector) {
         this.correctors.set(name, corrector);
-        logger.info(`Corrector registered: ${name}`);
+        logger.success(`Corrector registered: ${name}`);
     }
     /**
      * Get a corrector by name
@@ -415,13 +671,13 @@ export class CorrectorRegistry {
     /**
      * Apply corrections to a file
      */
-    async applyCorrections(filePath, error) {
+    async applyCorrections(filePath, error, dryRun = false) {
         const applicableCorrectors = this.getApplicableCorrectors(filePath, error);
         const results = [];
-        logger.info(`Applying ${applicableCorrectors.length} correctors to ${filePath}`);
+        logger.info(`Applying ${applicableCorrectors.length} correctors to ${filePath}${dryRun ? " (dry-run)" : ""}`);
         for (const corrector of applicableCorrectors) {
             try {
-                const result = await corrector.applyCorrection(filePath, error);
+                const result = await corrector.applyCorrection(filePath, error, dryRun);
                 results.push(result);
                 if (result.corrected) {
                     logger.info(`Corrector ${corrector.getName()} successfully corrected ${filePath}`);
@@ -440,12 +696,71 @@ export class CorrectorRegistry {
         }
         return results;
     }
+    /**
+     * Apply corrections to multiple files in batch
+     * Groups files by applicable corrector, then runs batch processing
+     */
+    async applyBatchCorrections(filePaths, error) {
+        const allResults = new Map();
+        if (filePaths.length === 0)
+            return allResults;
+        for (const filePath of filePaths) {
+            allResults.set(filePath, []);
+        }
+        const correctorFileMap = new Map();
+        for (const filePath of filePaths) {
+            const applicable = this.getApplicableCorrectors(filePath, error);
+            for (const corrector of applicable) {
+                const name = corrector.getName();
+                if (!correctorFileMap.has(name)) {
+                    correctorFileMap.set(name, []);
+                }
+                correctorFileMap.get(name).push(filePath);
+            }
+        }
+        for (const [correctorName, files] of correctorFileMap) {
+            const corrector = this.correctors.get(correctorName);
+            if (!corrector)
+                continue;
+            logger.info(`Batch applying ${correctorName} to ${files.length} files`);
+            try {
+                const batchResults = await corrector.applyBatchCorrection(files, error);
+                for (const [filePath, result] of batchResults) {
+                    const existing = allResults.get(filePath) || [];
+                    existing.push(result);
+                    allResults.set(filePath, existing);
+                    if (result.corrected) {
+                        logger.info(`Corrector ${correctorName} successfully corrected ${filePath}`);
+                    }
+                }
+            }
+            catch (err) {
+                logger.error(`Corrector ${correctorName} batch failed:`, err);
+                const errorResult = {
+                    success: false,
+                    corrected: false,
+                    changes: [],
+                    executionTime: 0,
+                    error: err instanceof Error ? err : new Error(String(err)),
+                };
+                for (const filePath of files) {
+                    const existing = allResults.get(filePath) || [];
+                    existing.push(errorResult);
+                    allResults.set(filePath, existing);
+                }
+            }
+        }
+        return allResults;
+    }
 }
 /**
  * Create default corrector registry
  */
-export function createCorrectorRegistry() {
+export function createCorrectorRegistry(options) {
     const registry = new CorrectorRegistry();
+    if (options?.skipDefaults) {
+        return registry;
+    }
     // Register default correctors
     registry.register("eslint-fix", new ESLintFixCorrector({
         id: "eslint-fix",
@@ -477,14 +792,7 @@ export function createCorrectorRegistry() {
         enabled: true,
         priority: 1,
         conditions: {},
-        actions: [
-            {
-                type: "replace",
-                target: "all",
-                content: "",
-                newText: "logger.info(",
-            },
-        ],
+        actions: [],
     }));
     return registry;
 }

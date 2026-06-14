@@ -24,7 +24,7 @@ export interface NotificationData {
     message: string;
     level: NotificationLevel;
     channel: NotificationChannel;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     file?: string;
     error?: Error;
     timestamp?: Date;
@@ -141,7 +141,9 @@ export declare class NotifierRegistry {
 /**
  * Create default notifier registry with common notifiers
  */
-export declare function createNotifierRegistry(): NotifierRegistry;
+export declare function createNotifierRegistry(options?: {
+    skipDefaults?: boolean;
+}): NotifierRegistry;
 /**
  * Notification utility functions
  */
@@ -149,15 +151,15 @@ export declare class NotificationUtils {
     /**
      * Create notification data for file events
      */
-    static createFileNotification(title: string, message: string, filePath: string, level?: NotificationLevel, metadata?: Record<string, any>): NotificationData;
+    static createFileNotification(title: string, message: string, filePath: string, level?: NotificationLevel, metadata?: Record<string, unknown>): NotificationData;
     /**
      * Create notification data for errors
      */
-    static createErrorNotification(title: string, error: Error, filePath?: string, metadata?: Record<string, any>): NotificationData;
+    static createErrorNotification(title: string, error: Error, filePath?: string, metadata?: Record<string, unknown>): NotificationData;
     /**
      * Create notification data for correction results
      */
-    static createCorrectionNotification(title: string, correctedFiles: string[], failedFiles: string[], metadata?: Record<string, any>): NotificationData;
+    static createCorrectionNotification(title: string, correctedFiles: string[], failedFiles: string[], metadata?: Record<string, unknown>): NotificationData;
 }
 export default BaseNotifier;
 //# sourceMappingURL=notifiers.d.ts.map

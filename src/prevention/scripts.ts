@@ -109,7 +109,7 @@ export class ScriptRunner {
       );
 
       const executionTime = Date.now() - startTime;
-      logger.info(`Script ${name} completed in ${executionTime}ms`);
+      logger.success(`Script ${name} completed in ${executionTime}ms`);
 
       return {
         success: result.exitCode === 0,

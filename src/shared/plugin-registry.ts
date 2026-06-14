@@ -38,7 +38,7 @@ export class PluginRegistry {
     try {
       await plugin.register(this.context);
       this.loaded.set(name, true);
-      logger.info(`Plugin "${name}" registered successfully`);
+      logger.success(`Plugin "${name}" registered successfully`);
     } catch (error) {
       this.loaded.set(name, false);
       logger.error(`Failed to register plugin "${name}":`, error);
@@ -63,7 +63,7 @@ export class PluginRegistry {
 
     this.plugins.delete(name);
     this.loaded.delete(name);
-    logger.info(`Plugin "${name}" unregistered`);
+    logger.success(`Plugin "${name}" unregistered`);
   }
 
   /**

@@ -1,8 +1,93 @@
 import fs from "fs-extra";
 import path from "path";
+import { execFile, spawn } from "child_process";
 import { glob } from "glob";
 import Joi from "joi";
 import logger from "./logger.js";
+/**
+ * Safe execFile - runs a command with arguments without shell interpretation.
+ * Returns { stdout, stderr } or throws on non-zero exit.
+ */
+export function safeExecFile(command, args, options) {
+    return new Promise((resolve, reject) => {
+        execFile(command, args, { timeout: options?.timeout ?? 60000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+            if (error) {
+                reject(error);
+            }
+            else {
+                resolve({
+                    stdout: stdout.toString(),
+                    stderr: stderr.toString(),
+                });
+            }
+        });
+    });
+}
+/**
+ * Safe spawn - runs a command with arguments, returns stdout/stderr.
+ * Does NOT use a shell - immune to injection.
+ */
+export function safeSpawn(command, args, options) {
+    return new Promise((resolve, reject) => {
+        const timeout = options?.timeout ?? 60000;
+        // On Windows, shell: true is needed for .cmd extensions (npx, npm)
+        const isWindows = process.platform === "win32";
+        const needsShell = isWindows && /^(npx|npm|yarn|pnpm)$/i.test(command);
+        const child = spawn(command, args, {
+            cwd: options?.cwd,
+            env: options?.env,
+            stdio: ["ignore", "pipe", "pipe"],
+            shell: needsShell,
+        });
+        let stdout = "";
+        let stderr = "";
+        child.stdout?.on("data", (data) => {
+            stdout += data.toString();
+        });
+        child.stderr?.on("data", (data) => {
+            stderr += data.toString();
+        });
+        const timer = setTimeout(() => {
+            child.kill("SIGTERM");
+            reject(new Error(`Process ${command} timed out after ${timeout}ms`));
+        }, timeout);
+        child.on("close", (code) => {
+            clearTimeout(timer);
+            resolve({ stdout, stderr, exitCode: code ?? 1 });
+        });
+        child.on("error", (err) => {
+            clearTimeout(timer);
+            reject(err);
+        });
+    });
+}
+/**
+ * Escape HTML special characters to prevent XSS injection.
+ */
+export function escapeHtml(str) {
+    return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+/**
+ * Sanitize a file path - reject dangerous patterns.
+ * Returns the resolved path if valid, throws if path is suspicious.
+ */
+export function sanitizePath(filePath) {
+    const resolved = path.resolve(filePath);
+    // Reject path traversal
+    if (resolved.includes("..")) {
+        throw new Error(`Path contains traversal: ${filePath}`);
+    }
+    // Reject null bytes
+    if (resolved.includes("\0")) {
+        throw new Error(`Path contains null byte: ${filePath}`);
+    }
+    return resolved;
+}
 /**
  * Utility class for common file and system operations
  */
@@ -109,6 +194,26 @@ export class Utils {
      */
     static sleep(ms) {
         return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+    /**
+     * Parse a file size string (e.g. "1MB", "500KB", "2GB") to bytes
+     */
+    static parseFileSize(size) {
+        if (typeof size === "number")
+            return size;
+        const match = size.match(/^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)$/i);
+        if (!match)
+            return parseInt(size, 10) || 0;
+        const value = parseFloat(match[1]);
+        const unit = match[2].toUpperCase();
+        const multipliers = {
+            B: 1,
+            KB: 1024,
+            MB: 1024 * 1024,
+            GB: 1024 * 1024 * 1024,
+            TB: 1024 * 1024 * 1024 * 1024,
+        };
+        return Math.floor(value * (multipliers[unit] || 1));
     }
     /**
      * Validate configuration object against schema

@@ -1,8 +1,6 @@
-import { exec, spawn } from "child_process";
-import { promisify } from "util";
+import { spawn } from "child_process";
 import { Utils } from "../shared/utils.js";
 import { createChildLogger } from "../shared/logger.js";
-const execAsync = promisify(exec);
 const logger = createChildLogger("prevention-scripts");
 /**
  * Script runner class for executing custom prevention scripts
@@ -52,7 +50,7 @@ export class ScriptRunner {
             logger.info(`Executing script: ${name}`);
             const result = await this.executeCommand(script, options, abortController.signal);
             const executionTime = Date.now() - startTime;
-            logger.info(`Script ${name} completed in ${executionTime}ms`);
+            logger.success(`Script ${name} completed in ${executionTime}ms`);
             return {
                 success: result.exitCode === 0,
                 stdout: result.stdout,
@@ -196,7 +194,7 @@ export class ScriptRunner {
                     error: new Error(`Command timed out after ${timeout}ms`),
                 });
             }, timeout);
-            child.on("close", (code, signal) => {
+            child.on("close", (code, _signal) => {
                 clearTimeout(timer);
                 resolve({
                     success: code === 0,
@@ -303,8 +301,11 @@ export const PredefinedScripts = {
 /**
  * Create script runner with predefined scripts
  */
-export function createScriptRunner() {
+export function createScriptRunner(options) {
     const runner = new ScriptRunner();
+    if (options?.skipDefaults) {
+        return runner;
+    }
     // Add predefined scripts
     runner.addScript(PredefinedScripts.eslintFix());
     runner.addScript(PredefinedScripts.prettierFormat());

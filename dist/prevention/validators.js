@@ -1,9 +1,6 @@
 import fs from "fs-extra";
-import { exec } from "child_process";
-import { promisify } from "util";
-import { Utils } from "../shared/utils.js";
+import { Utils, safeSpawn } from "../shared/utils.js";
 import { createChildLogger } from "../shared/logger.js";
-const execAsync = promisify(exec);
 const logger = createChildLogger("prevention-validators");
 /**
  * Base validator class
@@ -50,11 +47,19 @@ export class ESLintValidator extends BaseValidator {
         if (!this.isEnabled()) {
             return result;
         }
+        // Skip if ESLint was already checked and unavailable
+        if (this.eslintAvailable === false) {
+            return result;
+        }
         try {
             // Check if ESLint is available
             await this.checkESLintAvailability();
             // Run ESLint on the file
-            const { stdout, stderr } = await execAsync(`npx eslint "${filePath}" --format=json`);
+            const { stdout, stderr } = await safeSpawn("npx", [
+                "eslint",
+                filePath,
+                "--format=json",
+            ]);
             if (stderr) {
                 logger.warn(`ESLint stderr for ${filePath}:`, stderr);
             }
@@ -69,7 +74,7 @@ export class ESLintValidator extends BaseValidator {
                         line: message.line,
                         column: message.column,
                         severity: message.severity === 2 ? "error" : "warning",
-                        code: this.getCodeSnippet(filePath, message.line),
+                        code: await this.getCodeSnippet(filePath, message.line),
                     };
                     if (message.severity === 2) {
                         result.errors.push(validationMessage);
@@ -90,41 +95,53 @@ export class ESLintValidator extends BaseValidator {
             logger.debug(`ESLint validation completed for ${filePath}: ${result.errors.length} errors, ${result.warnings.length} warnings`);
         }
         catch (error) {
-            if (error.code === "ENOENT") {
-                logger.warn("ESLint not found, skipping validation");
-                result.warnings.push({
-                    rule: "eslint-not-found",
-                    message: "ESLint is not installed or not in PATH",
-                    file: filePath,
-                    suggestion: "Install ESLint: npm install -g eslint",
-                });
+            const errorCode = error instanceof Error && "code" in error
+                ? error.code
+                : undefined;
+            if (errorCode === "ENOENT") {
+                // npx not found — cache and skip future calls
+                this.eslintAvailable = false;
+                logger.warn("ESLint not found (npx ENOENT), skipping validation for all files");
+                return result;
             }
             else {
-                logger.error(`ESLint validation failed for ${filePath}:`, error);
-                result.errors.push({
-                    rule: "eslint-error",
-                    message: `ESLint execution failed: ${error.message}`,
-                    file: filePath,
-                    severity: "error",
-                });
-                result.isValid = false;
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                // ESLint not available is expected — log as warn, not error
+                if (errorMessage.includes("ESLint is not available")) {
+                    logger.warn(`ESLint validation skipped for ${filePath}: ${errorMessage}`);
+                }
+                else {
+                    logger.error(`ESLint validation failed for ${filePath}:`, error);
+                    result.errors.push({
+                        rule: "eslint-error",
+                        message: `ESLint execution failed: ${errorMessage}`,
+                        file: filePath,
+                        severity: "error",
+                    });
+                    result.isValid = false;
+                }
             }
         }
         return result;
     }
+    eslintAvailable = null;
     async checkESLintAvailability() {
+        if (this.eslintAvailable !== null)
+            return;
         try {
-            await execAsync("npx eslint --version");
+            await safeSpawn("npx", ["eslint", "--version"]);
+            this.eslintAvailable = true;
         }
         catch (error) {
+            this.eslintAvailable = false;
             throw new Error("ESLint is not available. Please install it: npm install -g eslint");
         }
     }
-    getCodeSnippet(filePath, lineNumber) {
+    async getCodeSnippet(filePath, lineNumber) {
         if (!lineNumber)
             return undefined;
         try {
-            const content = fs.readFileSync(filePath, "utf-8");
+            const content = await fs.readFile(filePath, "utf-8");
             const lines = content.split("\n");
             if (lineNumber <= lines.length) {
                 return lines[lineNumber - 1].trim();
@@ -159,10 +176,11 @@ export class JSONValidator extends BaseValidator {
             logger.debug(`JSON validation passed for ${filePath}`);
         }
         catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
             result.isValid = false;
             result.errors.push({
                 rule: "json-syntax",
-                message: `Invalid JSON: ${error.message}`,
+                message: `Invalid JSON: ${errorMessage}`,
                 file: filePath,
                 severity: "error",
             });
@@ -188,8 +206,8 @@ export class YAMLValidator extends BaseValidator {
         }
         try {
             // Check if yaml package is available
-            // @ts-ignore - yaml is optional, handled gracefully at runtime
-            const yaml = await import("yaml").catch(() => null);
+            const yamlModule = "yaml";
+            const yaml = await import(yamlModule).catch(() => null);
             if (!yaml) {
                 logger.debug("YAML package not available, skipping YAML validation");
                 return result;
@@ -199,14 +217,18 @@ export class YAMLValidator extends BaseValidator {
             logger.debug(`YAML validation passed for ${filePath}`);
         }
         catch (error) {
-            if (error.code === "MODULE_NOT_FOUND") {
+            const errorCode = error instanceof Error && "code" in error
+                ? error.code
+                : undefined;
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            if (errorCode === "MODULE_NOT_FOUND") {
                 logger.debug("YAML package not available, skipping YAML validation");
             }
             else {
                 result.isValid = false;
                 result.errors.push({
                     rule: "yaml-syntax",
-                    message: `Invalid YAML: ${error.message}`,
+                    message: `Invalid YAML: ${errorMessage}`,
                     file: filePath,
                     severity: "error",
                 });
@@ -282,7 +304,7 @@ export class ValidatorRegistry {
      */
     register(name, validator) {
         this.validators.set(name, validator);
-        logger.info(`Validator registered: ${name}`);
+        logger.success(`Validator registered: ${name}`);
     }
     /**
      * Get a validator by name
@@ -363,8 +385,11 @@ export class ValidatorRegistry {
 /**
  * Create default validator registry with common validators
  */
-export function createValidatorRegistry() {
+export function createValidatorRegistry(options) {
     const registry = new ValidatorRegistry();
+    if (options?.skipDefaults) {
+        return registry;
+    }
     // Register default validators
     registry.register("eslint", new ESLintValidator({
         enabled: true,

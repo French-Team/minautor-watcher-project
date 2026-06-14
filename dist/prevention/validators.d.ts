@@ -5,7 +5,7 @@ export interface ValidationResult {
     isValid: boolean;
     errors: ValidationError[];
     warnings: ValidationWarning[];
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
 }
 /**
  * Validation error interface
@@ -36,7 +36,7 @@ export interface ValidationWarning {
  */
 export interface ValidatorConfig {
     enabled: boolean;
-    rules: Record<string, any>;
+    rules: Record<string, unknown>;
     customRules?: Array<{
         name: string;
         pattern: RegExp;
@@ -74,6 +74,7 @@ export declare abstract class BaseValidator {
 export declare class ESLintValidator extends BaseValidator {
     constructor(config: ValidatorConfig);
     validate(filePath: string): Promise<ValidationResult>;
+    private eslintAvailable;
     private checkESLintAvailability;
     private getCodeSnippet;
 }
@@ -127,6 +128,8 @@ export declare class ValidatorRegistry {
 /**
  * Create default validator registry with common validators
  */
-export declare function createValidatorRegistry(): ValidatorRegistry;
+export declare function createValidatorRegistry(options?: {
+    skipDefaults?: boolean;
+}): ValidatorRegistry;
 export default BaseValidator;
 //# sourceMappingURL=validators.d.ts.map

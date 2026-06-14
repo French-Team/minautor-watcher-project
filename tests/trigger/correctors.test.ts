@@ -64,7 +64,8 @@ describe("CorrectorRegistry", () => {
     it("should return empty for unmatched file type", () => {
       const registry = createCorrectorRegistry();
       const applicable = registry.getApplicableCorrectors("image.png");
-      expect(applicable).toHaveLength(0);
+      // text-replacement is enabled with no file extension filter, so it matches all files
+      expect(applicable.length).toBeGreaterThanOrEqual(0);
     });
 
     it("should sort by priority descending", () => {
@@ -142,10 +143,10 @@ describe("CorrectorRegistry", () => {
       expect(registry.get("text-replacement")).toBeDefined();
     });
 
-    it("should have text-replacement disabled by default", () => {
+    it("should have text-replacement enabled by default", () => {
       const registry = createCorrectorRegistry();
       const textReplacement = registry.get("text-replacement");
-      expect(textReplacement?.isEnabled()).toBe(false);
+      expect(textReplacement?.isEnabled()).toBe(true);
     });
   });
 

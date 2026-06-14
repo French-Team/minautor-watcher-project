@@ -21,7 +21,7 @@ export interface PreventionRule {
         notifyOnFailure?: boolean;
         blockCommit?: boolean;
     };
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
 }
 /**
  * Prevention configuration
@@ -37,11 +37,11 @@ export interface PreventionConfig {
     };
     customValidators?: Array<{
         name: string;
-        config: any;
+        config: Record<string, unknown>;
     }>;
     customScripts?: Array<{
         name: string;
-        config: any;
+        config: Record<string, unknown>;
     }>;
 }
 /**
@@ -51,7 +51,11 @@ export declare class PreventionConfigManager {
     private config;
     private configPath;
     private configSchema;
-    constructor(configPath?: string);
+    private constructor();
+    /**
+     * Create and initialize a PreventionConfigManager (async factory)
+     */
+    static create(configPath?: string): Promise<PreventionConfigManager>;
     /**
      * Load configuration from file or use defaults
      */
@@ -75,7 +79,7 @@ export declare class PreventionConfigManager {
     /**
      * Get rules applicable to a file
      */
-    getRulesForFile(filePath: string): PreventionRule[];
+    getRulesForFile(filePath: string): Promise<PreventionRule[]>;
     /**
      * Add a new rule
      */
@@ -115,8 +119,8 @@ export declare class PreventionConfigManager {
     importConfig(config: PreventionConfig): Promise<void>;
 }
 /**
- * Create a prevention configuration manager
+ * Create a prevention configuration manager (async factory)
  */
-export declare function createPreventionConfig(configPath?: string): PreventionConfigManager;
+export declare function createPreventionConfig(configPath?: string): Promise<PreventionConfigManager>;
 export default PreventionConfigManager;
 //# sourceMappingURL=config.d.ts.map

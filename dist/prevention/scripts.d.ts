@@ -103,6 +103,8 @@ export declare const PredefinedScripts: {
 /**
  * Create script runner with predefined scripts
  */
-export declare function createScriptRunner(): ScriptRunner;
+export declare function createScriptRunner(options?: {
+    skipDefaults?: boolean;
+}): ScriptRunner;
 export default ScriptRunner;
 //# sourceMappingURL=scripts.d.ts.map

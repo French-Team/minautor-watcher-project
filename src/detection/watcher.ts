@@ -80,7 +80,7 @@ export class Watcher extends EventEmitter {
       // Set up event listeners
       this.setupEventListeners();
 
-      logger.info("Watcher started successfully");
+      logger.success("Watcher started successfully");
     } catch (error) {
       logger.error("Failed to start watcher:", error);
       this.emit(WatcherEvent.WATCHER_ERROR, error);
@@ -103,7 +103,7 @@ export class Watcher extends EventEmitter {
         await this.watcher.close();
         this.watcher = null;
 
-        logger.info("Watcher stopped successfully");
+        logger.success("Watcher stopped successfully");
       }
     } catch (error) {
       logger.error("Error stopping watcher:", error);

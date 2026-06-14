@@ -1,6 +1,8 @@
 import fs from "fs-extra";
+import path from "path";
 import { Utils, safeSpawn } from "../shared/utils.js";
 import { createChildLogger } from "../shared/logger.js";
+import { injectFiles, getEslintTemplate } from "../injection/index.js";
 
 const logger = createChildLogger("prevention-validators");
 
@@ -112,12 +114,22 @@ export class ESLintValidator extends BaseValidator {
       return result;
     }
 
+    // Skip if ESLint was already checked and unavailable
+    if (this.eslintAvailable === false) {
+      return result;
+    }
+
     try {
       // Check if ESLint is available
       await this.checkESLintAvailability();
 
+      // Check if the target project has an ESLint config
+      if (!(await this.checkESLintConfig(filePath))) {
+        return result;
+      }
+
       // Run ESLint on the file
-      const { stdout, stderr } = await safeSpawn("npx", [
+      const { stdout, stderr, exitCode } = await safeSpawn("npx", [
         "eslint",
         filePath,
         "--format=json",
@@ -127,8 +139,36 @@ export class ESLintValidator extends BaseValidator {
         logger.warn(`ESLint stderr for ${filePath}:`, stderr);
       }
 
+      // Handle empty stdout or non-zero exit without JSON output
+      if (!stdout || stdout.trim() === "") {
+        if (exitCode !== 0) {
+          logger.warn(
+            `ESLint returned no output for ${filePath} (exit code ${exitCode})`
+          );
+        }
+        return result;
+      }
+
       // Parse ESLint output
-      const eslintResults = JSON.parse(stdout);
+      let eslintResults: Array<{
+        messages: Array<{
+          ruleId: string | null;
+          message: string;
+          line: number;
+          column: number;
+          severity: number;
+          suggestions?: Array<{ desc: string; fix: unknown }>;
+        }>;
+      }>;
+      try {
+        eslintResults = JSON.parse(stdout);
+      } catch (parseError) {
+        logger.warn(
+          `ESLint output not valid JSON for ${filePath}:`,
+          stdout.substring(0, 200)
+        );
+        return result;
+      }
 
       for (const fileResult of eslintResults) {
         for (const message of fileResult.messages) {
@@ -152,7 +192,7 @@ export class ESLintValidator extends BaseValidator {
               file: validationMessage.file,
               line: validationMessage.line,
               column: validationMessage.column,
-              suggestion: message.suggestions?.[0],
+              suggestion: message.suggestions?.[0]?.desc,
             });
           }
         }
@@ -167,24 +207,30 @@ export class ESLintValidator extends BaseValidator {
           ? (error as { code: string }).code
           : undefined;
       if (errorCode === "ENOENT") {
-        logger.warn("ESLint not found, skipping validation");
-        result.warnings.push({
-          rule: "eslint-not-found",
-          message: "ESLint is not installed or not in PATH",
-          file: filePath,
-          suggestion: "Install ESLint: npm install -g eslint",
-        });
+        // npx not found — cache and skip future calls
+        this.eslintAvailable = false;
+        logger.warn(
+          "ESLint not found (npx ENOENT), skipping validation for all files"
+        );
+        return result;
       } else {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
-        logger.error(`ESLint validation failed for ${filePath}:`, error);
-        result.errors.push({
-          rule: "eslint-error",
-          message: `ESLint execution failed: ${errorMessage}`,
-          file: filePath,
-          severity: "error",
-        });
-        result.isValid = false;
+        // ESLint not available is expected — log as warn, not error
+        if (errorMessage.includes("ESLint is not available")) {
+          logger.warn(
+            `ESLint validation skipped for ${filePath}: ${errorMessage}`
+          );
+        } else {
+          logger.error(`ESLint validation failed for ${filePath}:`, error);
+          result.errors.push({
+            rule: "eslint-error",
+            message: `ESLint execution failed: ${errorMessage}`,
+            file: filePath,
+            severity: "error",
+          });
+          result.isValid = false;
+        }
       }
     }
 
@@ -192,9 +238,11 @@ export class ESLintValidator extends BaseValidator {
   }
 
   private eslintAvailable: boolean | null = null;
+  private eslintConfigChecked = false;
+  private eslintConfigMissing = false;
 
   private async checkESLintAvailability(): Promise<void> {
-    if (this.eslintAvailable === true) return;
+    if (this.eslintAvailable !== null) return;
 
     try {
       await safeSpawn("npx", ["eslint", "--version"]);
@@ -205,6 +253,126 @@ export class ESLintValidator extends BaseValidator {
         "ESLint is not available. Please install it: npm install -g eslint"
       );
     }
+  }
+
+  /**
+   * Check if the target project has an ESLint configuration.
+   * If missing, auto-detects TS/JS and injects a config file.
+   * Called once per validator instance.
+   */
+  private async checkESLintConfig(filePath: string): Promise<boolean> {
+    if (this.eslintConfigChecked) return !this.eslintConfigMissing;
+    this.eslintConfigChecked = true;
+
+    const projectDir = path.dirname(filePath);
+    const configFiles = [
+      ".eslintrc",
+      ".eslintrc.js",
+      ".eslintrc.cjs",
+      ".eslintrc.mjs",
+      ".eslintrc.json",
+      ".eslintrc.yaml",
+      ".eslintrc.yml",
+    ];
+
+    // Check for config files
+    for (const file of configFiles) {
+      if (await fs.pathExists(path.join(projectDir, file))) {
+        return true;
+      }
+    }
+
+    // Check for eslintConfig in package.json
+    const packageJsonPath = path.join(projectDir, "package.json");
+    if (await fs.pathExists(packageJsonPath)) {
+      try {
+        const pkg = await fs.readJson(packageJsonPath);
+        if (pkg.eslintConfig) return true;
+      } catch {
+        // ignore parse errors
+      }
+    }
+
+    // Check flat config (eslint.config.js / eslint.config.mjs / eslint.config.cjs)
+    const flatConfigs = [
+      "eslint.config.js",
+      "eslint.config.mjs",
+      "eslint.config.cjs",
+    ];
+    for (const file of flatConfigs) {
+      if (await fs.pathExists(path.join(projectDir, file))) {
+        return true;
+      }
+    }
+
+    // No config found — inject one
+    logger.info(`ESLint config not found in ${projectDir}, injecting...`);
+
+    // Auto-detect TypeScript vs JavaScript
+    const isTypescript = await this.detectTypescript(projectDir);
+    const template = getEslintTemplate(isTypescript);
+
+    const results = await injectFiles({
+      projectDir,
+      agents: ["eslint"],
+      config: {
+        enabled: true,
+        templates: ["eslint"],
+        autoInject: false,
+        autoUpdate: false,
+        forceOverwrite: false,
+        projectPatterns: [],
+      },
+      force: true,
+    });
+
+    const injected = results.find((r) => r.agent === "eslint");
+    if (
+      injected &&
+      (injected.action === "created" || injected.action === "updated")
+    ) {
+      logger.success(
+        `ESLint config injected: ${template.fileName} (${
+          isTypescript ? "TypeScript" : "JavaScript"
+        })`
+      );
+      return true;
+    }
+
+    logger.error(
+      `Failed to inject ESLint config in ${projectDir}: ${
+        injected?.reason || "unknown error"
+      }`
+    );
+    this.eslintConfigMissing = true;
+    return false;
+  }
+
+  /**
+   * Detect if a project uses TypeScript by looking for .ts/.tsx files
+   */
+  private async detectTypescript(projectDir: string): Promise<boolean> {
+    try {
+      const entries = await fs.readdir(projectDir);
+      for (const entry of entries) {
+        if (entry.endsWith(".ts") || entry.endsWith(".tsx")) {
+          return true;
+        }
+      }
+      // Also check src/ subdirectory
+      const srcDir = path.join(projectDir, "src");
+      if (await fs.pathExists(srcDir)) {
+        const srcEntries = await fs.readdir(srcDir);
+        for (const entry of srcEntries) {
+          if (entry.endsWith(".ts") || entry.endsWith(".tsx")) {
+            return true;
+          }
+        }
+      }
+    } catch {
+      // ignore errors
+    }
+    return false;
   }
 
   private async getCodeSnippet(
@@ -408,7 +576,7 @@ export class ValidatorRegistry {
    */
   register(name: string, validator: BaseValidator): void {
     this.validators.set(name, validator);
-    logger.info(`Validator registered: ${name}`);
+    logger.success(`Validator registered: ${name}`);
   }
 
   /**

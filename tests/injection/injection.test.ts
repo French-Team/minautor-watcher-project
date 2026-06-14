@@ -75,7 +75,7 @@ describe("V3.1 - Injection System", () => {
     });
 
     test("all templates should have managed header in content", () => {
-      const templates = getAllTemplates();
+      const templates = getAllTemplates().filter((t) => t.agent !== "eslint");
       const header = getManagedHeader();
       for (const t of templates) {
         expect(t.content).toContain(header);
@@ -86,7 +86,10 @@ describe("V3.1 - Injection System", () => {
   // ===== V3.2 Template Content Validation =====
 
   describe("V3.2 - Template Content", () => {
-    const ALL_TEMPLATES_CONTENT = getAllTemplates();
+    // Exclude ESLint templates (JSON configs, not guidance docs)
+    const ALL_TEMPLATES_CONTENT = getAllTemplates().filter(
+      (t) => t.agent !== "eslint"
+    );
 
     test("all templates should mention security rules", () => {
       for (const template of ALL_TEMPLATES_CONTENT) {
@@ -669,7 +672,7 @@ describe("V3.1 - Injection System", () => {
       const { analyzeProject } = await import(
         "../../src/analysis/project-analyzer.js"
       );
-      const analysis = await analyzeProject(tmpDir);
+      await analyzeProject(tmpDir);
 
       // 2. Check injection
       const injResult = await checkInjectionStatus({

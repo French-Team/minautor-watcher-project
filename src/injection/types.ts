@@ -9,7 +9,8 @@ export type AgentType =
   | "cursor"
   | "windsurf"
   | "aider"
-  | "generic";
+  | "generic"
+  | "eslint";
 
 /**
  * A consignment template for a specific agent

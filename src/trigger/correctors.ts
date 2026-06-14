@@ -550,7 +550,7 @@ export class CommandCorrector extends BaseCorrector {
               newText: "corrected-by-command",
             });
 
-            logger.info(`Command correction successful: ${action.command}`);
+            logger.success(`Command correction successful: ${action.command}`);
           } else {
             logger.error(
               `Command correction failed: ${action.command} - ${commandResult.error}`
@@ -653,8 +653,18 @@ export class ESLintFixCorrector extends BaseCorrector {
           result.correctedContent = await fs.readFile(filePath, "utf-8");
         }
       });
-    } catch (error) {
-      logger.error(`ESLint auto-fix failed for ${filePath}:`, error);
+    } catch (error: unknown) {
+      const errorCode =
+        error instanceof Error && "code" in error
+          ? (error as { code: string }).code
+          : undefined;
+      if (errorCode === "ENOENT") {
+        logger.warn(
+          `ESLint auto-fix skipped for ${filePath}: npx not found in PATH`
+        );
+      } else {
+        logger.error(`ESLint auto-fix failed for ${filePath}:`, error);
+      }
       result.error = error instanceof Error ? error : new Error(String(error));
     }
 
@@ -720,8 +730,16 @@ export class ESLintFixCorrector extends BaseCorrector {
           logger.warn(`ESLint batch stderr: ${stderr}`);
         }
       }
-    } catch (error) {
-      logger.error(`ESLint batch fix failed:`, error);
+    } catch (error: unknown) {
+      const errorCode =
+        error instanceof Error && "code" in error
+          ? (error as { code: string }).code
+          : undefined;
+      if (errorCode === "ENOENT") {
+        logger.warn("ESLint batch fix skipped: npx not found in PATH");
+      } else {
+        logger.error(`ESLint batch fix failed:`, error);
+      }
       const err = error instanceof Error ? error : new Error(String(error));
       for (const filePath of filePaths) {
         if (!results.has(filePath)) {
@@ -791,8 +809,18 @@ export class PrettierFormatCorrector extends BaseCorrector {
         // Read the formatted content
         result.correctedContent = await fs.readFile(filePath, "utf-8");
       });
-    } catch (error) {
-      logger.error(`Prettier format failed for ${filePath}:`, error);
+    } catch (error: unknown) {
+      const errorCode =
+        error instanceof Error && "code" in error
+          ? (error as { code: string }).code
+          : undefined;
+      if (errorCode === "ENOENT") {
+        logger.warn(
+          `Prettier format skipped for ${filePath}: npx not found in PATH`
+        );
+      } else {
+        logger.error(`Prettier format failed for ${filePath}:`, error);
+      }
       result.error = error instanceof Error ? error : new Error(String(error));
     }
 
@@ -846,8 +874,16 @@ export class PrettierFormatCorrector extends BaseCorrector {
           results.set(filePath, result);
         }
       }
-    } catch (error) {
-      logger.error(`Prettier batch format failed:`, error);
+    } catch (error: unknown) {
+      const errorCode =
+        error instanceof Error && "code" in error
+          ? (error as { code: string }).code
+          : undefined;
+      if (errorCode === "ENOENT") {
+        logger.warn("Prettier format skipped: npx not found in PATH");
+      } else {
+        logger.error(`Prettier batch format failed:`, error);
+      }
       const err = error instanceof Error ? error : new Error(String(error));
       for (const filePath of filePaths) {
         if (!results.has(filePath)) {
@@ -877,7 +913,7 @@ export class CorrectorRegistry {
    */
   register(name: string, corrector: BaseCorrector): void {
     this.correctors.set(name, corrector);
-    logger.info(`Corrector registered: ${name}`);
+    logger.success(`Corrector registered: ${name}`);
   }
 
   /**
@@ -1067,7 +1103,7 @@ export function createCorrectorRegistry(options?: {
       id: "text-replacement",
       name: "Text Replacement",
       description: "Apply text-based corrections",
-      enabled: false,
+      enabled: true,
       priority: 1,
       conditions: {},
       actions: [],

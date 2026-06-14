@@ -24,7 +24,7 @@ export interface FilterCriteria {
 export interface FilterResult {
     passed: boolean;
     reason?: string;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
 }
 /**
  * File filter class for applying various filtering rules to file events

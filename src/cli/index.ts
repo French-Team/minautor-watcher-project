@@ -24,6 +24,11 @@ import {
   evaluateRules,
   formatEvaluations,
 } from "../analysis/index.js";
+import {
+  generateEnvReport,
+  printBanner,
+  printCompactBanner,
+} from "../environment/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = fs.readJsonSync(path.join(__dirname, "../../package.json"));
@@ -61,6 +66,8 @@ export class WatcherCLI {
     this.setupPreviewCommand();
     this.setupScanCommand();
     this.setupAnalyzeCommand();
+    this.setupEnvCommand();
+    this.setupDoctorCommand();
   }
 
   private setupStartCommand(): void {
@@ -924,6 +931,16 @@ export class WatcherCLI {
         try {
           const projectDir = path.resolve(options.dir);
 
+          // --env is ALWAYS injected automatically for analyze
+          let envReport;
+          try {
+            envReport = await generateEnvReport();
+            // Print banner if not already shown (analyze always shows env)
+            printBanner(envReport);
+          } catch {
+            // Continue without env if detection fails
+          }
+
           console.log(chalk.bold("\n📊 Project Analysis\n"));
           console.log(chalk.gray("  Directory: ") + chalk.cyan(projectDir));
           console.log();
@@ -1015,6 +1032,126 @@ export class WatcherCLI {
   }
 
   /**
+   * Environment command — show environment report
+   */
+  private setupEnvCommand(): void {
+    this.program
+      .command("env")
+      .description("Show environment report (system, tools, dev environment)")
+      .option("--json", "Output as JSON")
+      .option("--compact", "Show compact banner only")
+      .action(async (options) => {
+        try {
+          const report = await generateEnvReport();
+
+          if (options.json) {
+            console.log(JSON.stringify(report, null, 2));
+            return;
+          }
+
+          if (options.compact) {
+            printCompactBanner(report);
+            return;
+          }
+
+          // Full banner is already shown by run() before this command
+          // Just print the detailed info if not already shown
+          printBanner(report);
+        } catch (error) {
+          console.error(
+            chalk.red("✖") +
+              " Environment detection failed: " +
+              (error instanceof Error ? error.message : String(error))
+          );
+          process.exit(1);
+        }
+      });
+  }
+
+  /**
+   * Doctor command — check environment and fix issues
+   */
+  private setupDoctorCommand(): void {
+    this.program
+      .command("doctor")
+      .description("Check environment health and fix missing tools")
+      .option("--fix", "Automatically install missing tools")
+      .action(async (options) => {
+        try {
+          const report = await generateEnvReport();
+          printBanner(report);
+
+          if (report.missingTools.length === 0) {
+            console.log(chalk.green("✔") + " All tools are available!");
+            console.log();
+            return;
+          }
+
+          console.log(chalk.bold("Missing Tools:\n"));
+          for (const tool of report.missingTools) {
+            console.log(
+              `  ${chalk.red("✗")} ${chalk.bold(tool.name)}: ${
+                tool.installSuggestion
+              }`
+            );
+          }
+          console.log();
+
+          if (options.fix) {
+            console.log(chalk.bold("Installing missing tools...\n"));
+            const { execFile } = await import("child_process");
+            for (const tool of report.missingTools) {
+              if (tool.installSuggestion.startsWith("npm install")) {
+                const cmd = tool.installSuggestion;
+                console.log(`  ${chalk.yellow("*")} Running: ${cmd}`);
+                await new Promise<void>((resolve) => {
+                  execFile(
+                    "npm",
+                    cmd.replace("npm install ", "").split(" "),
+                    { timeout: 60000 },
+                    (error) => {
+                      if (error) {
+                        console.log(
+                          `    ${chalk.red("✖")} Failed: ${error.message}`
+                        );
+                      } else {
+                        console.log(
+                          `    ${chalk.green("✔")} ${tool.name} installed`
+                        );
+                      }
+                      resolve();
+                    }
+                  );
+                });
+              } else {
+                console.log(
+                  `  ${chalk.yellow("!")} Manual install required: ${
+                    tool.installSuggestion
+                  }`
+                );
+              }
+            }
+            console.log(chalk.green("\n✔") + " Doctor scan complete!");
+          } else {
+            console.log(
+              chalk.gray("  Run with ") +
+                chalk.cyan("--fix") +
+                chalk.gray(" to automatically install missing tools.")
+            );
+          }
+          console.log();
+        } catch (error) {
+          console.error(
+            chalk.red("✖") +
+              " Doctor failed: " +
+              (error instanceof Error ? error.message : String(error))
+          );
+          process.exit(1);
+        }
+      });
+  }
+
+  /**
    * Preview/dry-run command — show what corrections would be applied without writing
    */
   private setupPreviewCommand(): void {
@@ -1098,6 +1235,28 @@ export class WatcherCLI {
    */
   async run(): Promise<void> {
     try {
+      // Show banner before every command (except env --compact to avoid double)
+      const args = process.argv.slice(2);
+      const command = args[0];
+      const isCompactEnv = command === "env" && args.includes("--compact");
+
+      if (command && command !== "env") {
+        try {
+          const report = await generateEnvReport();
+          printBanner(report);
+        } catch {
+          // If environment detection fails, continue with the command
+        }
+      } else if (command === "env" && !isCompactEnv) {
+        // For `env` command without --compact, show full banner
+        try {
+          const report = await generateEnvReport();
+          printBanner(report);
+        } catch {
+          // Continue
+        }
+      }
+
       await this.program.parseAsync(process.argv);
     } catch (error) {
       logger.error("CLI error:", error);

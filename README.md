@@ -2,7 +2,9 @@
 
 # minautor watcher project
 
-Un service de surveillance de code modulaire, automatisé et portable. Détecte les changements en temps réel, prévient les erreurs avant propagation, et corrige automatiquement ce qui peut l'être — en arrière-plan, sans interruption du développement.
+Un service de surveillance de code modulaire, automatisé et portable. Détecte les changements en temps réel, prévient les erreurs avant propagation, corrige automatiquement — et **injecte des fichiers de consignes pour guider les agents IA**.
+
+Le watcher résout un problème concret : les agents IA laissent des erreurs partout dans les projets. Le watcher les détecte, les corrige, et **injecte des fichiers CLAUDE.md / AGENTS.md** pour que tous les agents suivent les mêmes directives.
 
 ---
 
@@ -14,13 +16,13 @@ Un service de surveillance de code modulaire, automatisé et portable. Détecte 
   - [Detection](#detection)
   - [Prevention](#prevention)
   - [Trigger](#trigger)
+  - [Injection](#injection) *(V3)*
+  - [Analysis](#analysis) *(V3)*
+  - [Environment](#environment-v4) *(V4)*
+- [Sécurité et stabilité (V2)](#sécurité-et-stabilité-v2)
 - [Configuration](#configuration)
 - [CLI](#cli)
 - [API programmatique](#api-programmatique)
-- [Développement](#développement)
-  - [Ajouter un validateur](#ajouter-un-validateur)
-  - [Ajouter un correcteur](#ajouter-un-correcteur)
-  - [Ajouter un notifieur](#ajouter-un-notifieur)
 - [Tests](#tests)
 - [Stack](#stack)
 
@@ -28,35 +30,43 @@ Un service de surveillance de code modulaire, automatisé et portable. Détecte 
 
 ## Philosophie
 
-minautor watcher project est né d'un constat simple : la qualité du code ne devrait pas reposer uniquement sur la discipline de l'équipe. Au lieu d'attendre une revue de code ou une CI distante, minautor watcher project **agit localement, en continu**, en trois temps :
+minautor watcher project est né d'un constat simple : les agents IA laissent des erreurs partout dans les projets sans s'en rendre compte. Le watcher agit en continu pour :
 
-1. **Détecter** les changements dès qu'ils surviennent
+1. **Détecter** les changements et les erreurs dès qu'ils surviennent
 2. **Prévenir** les mauvaises pratiques par validation immédiate
 3. **Déclencher** des corrections automatiques ou des notifications
+4. **Injecter** des fichiers de consignes pour guider les agents IA *(V3)*
+5. **Analyser** les projets et adapter ses règles *(V3)*
+6. **Se connaître** : OS, GPU, RAM, réseau, outils disponibles *(V4)*
 
-L'objectif n'est pas de remplacer les outils existants (ESLint, Prettier, hooks git), mais de les **orchestrer en continu** plutôt qu'à des moments ponctuels.
+L'objectif n'est pas de remplacer les outils existants, mais de les **orchestrer en continu** et de **standardiser le comportement des agents IA** à travers tous les projets.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    WatcherService                     │
-├────────────┬──────────────┬──────────────────────────┤
-│ Detection  │  Prevention  │        Trigger           │
-│            │              │                          │
-│ chokidar   │  validateurs  │  correcteurs             │
-│ filters    │  scripts     │  notifieurs              │
-│ events     │  config      │  rules engine            │
-└─────┬──────┴──────┬───────┴──────────┬───────────────┘
-      │             │                  │
-      └─────────────┴──────────────────┘
-                    │
-             Event Bus (DetectionEventBus)
+┌──────────────────────────────────────────────────────────────────────┐
+│                          WatcherService                              │
+├────────────┬──────────────┬──────────────────┬───────────┬───────────┤
+│ Detection  │  Prevention  │     Trigger      │ Injection │Environment│
+│            │              │                  │   (V3)    │   (V4)    │
+│ chokidar   │  validateurs  │  correcteurs     │ templates │ sysinfo   │
+│ filters    │  scripts     │  notifieurs      │ detector  │ tools     │
+│ events     │  config      │  rules engine    │ injector  │ banner    │
+│            │  ESLint auto │                  │ ESLint cfg│ doctor    │
+└─────┬──────┴──────┬───────┴────────┬─────────┴─────┬─────┴─────┬─────┘
+      │             │                │               │           │
+      └─────────────┴────────────────┴───────────────┴───────────┘
+                             │
+                    Event Bus (DetectionEventBus)
+                             │
+                  ┌──────────┴──────────┐
+                  │    Analysis (V3)    │
+                  │   project-analyzer  │
+                  │   rules-engine      │
+                  └─────────────────────┘
 ```
-
-Chaque module est indépendant, peut être utilisé séparément, et communique via un bus d'événements partagé.
 
 ---
 
@@ -77,7 +87,7 @@ Surveille le système de fichiers et filtre les événements pertinents.
 
 **Événements émis :**
 
-```typescript
+```
 FILE_DETECTED    → fichier ajouté
 FILE_MODIFIED    → fichier modifié
 FILE_DELETED     → fichier supprimé
@@ -106,7 +116,7 @@ Valide le code dès qu'un fichier est détecté ou modifié.
 | ------------------------- | ------------------------------------------------------------- |
 | `PreventionModule`        | Orchestre la validation et l'exécution des scripts            |
 | `BaseValidator`           | Classe abstraite pour les validateurs                         |
-| `ESLintValidator`         | Exécute ESLint sur les fichiers JS/TS                         |
+| `ESLintValidator`         | Exécute ESLint sur les fichiers JS/TS + injecte la config manquante |
 | `JSONValidator`           | Vérifie la syntaxe JSON                                       |
 | `YAMLValidator`           | Vérifie la syntaxe YAML (optionnel)                           |
 | `PatternValidator`        | Détecte des patterns personnalisés (console.log, TODO, etc.)  |
@@ -114,16 +124,12 @@ Valide le code dès qu'un fichier est détecté ou modifié.
 | `ScriptRunner`            | Exécute des scripts shell (ESLint --fix, Prettier, tsc, etc.) |
 | `PreventionConfigManager` | Gère les règles depuis `config/prevention-rules.json`         |
 
-**Règles par défaut :**
+**Injection ESLint automatique :**
 
-```
-ESLint Validation    → erreur   → .js/.ts/.jsx/.tsx
-Prettier Formatting  → warning  → .js/.ts/.jsx/.tsx/.json/.md
-JSON Validation      → erreur   → .json
-TypeScript Check     → erreur   → .ts/.tsx
-Security Audit       → warning  → package.json
-Dependency Check     → info     → package.json
-```
+Lorsqu'un projet analysé n'a pas de configuration ESLint (`.eslintrc*`, `eslint.config.*`, ou `eslintConfig` dans `package.json`), le watcher :
+1. Détecte si le projet est TypeScript ou JavaScript
+2. Injecte un `.eslintrc.json` adapté via le système d'injection
+3. Log : `ESLint config injected: .eslintrc.json (TypeScript)`
 
 **Scripts intégrés :**
 
@@ -158,43 +164,254 @@ Corrige les problèmes détectés et notifie les canaux configurés.
 | `FileNotifier`             | Écrit dans un fichier de log dédié                 |
 | `NotifierRegistry`         | Enregistre et résout les notifieurs                |
 
-**Actions disponibles :**
+**Backup / Rollback (V2) :**
+
+Chaque correction crée un fichier `.bak` avant modification. En cas d'erreur, le fichier est restauré automatiquement.
 
 ```typescript
-type ActionType = "correct" | "notify" | "log" | "skip" | "custom";
+import { writeFileWithBackup, restoreFromBackup } from "./trigger/correctors.js";
+
+await writeFileWithBackup(filePath, newContent);
+await restoreFromBackup(filePath); // restaure .bak
 ```
 
-**Types de règles déclencheurs (config/trigger-rules.json) :**
+**Notifications skip si credentials manquants :**
 
-| Propriété        | Description                                                          |
-| ---------------- | -------------------------------------------------------------------- |
-| `eventTypes`     | Types d'événements déclencheurs (`fileModified`, `preventionFailed`) |
-| `fileExtensions` | Extensions ciblées                                                   |
-| `filePatterns`   | Patterns de fichiers                                                 |
-| `errorPatterns`  | Patterns d'erreur à détecter                                         |
-| `severity`       | Seuil de sévérité minimal                                            |
-| `cooldown`       | Période de repos entre deux exécutions                               |
-| `priority`       | Ordre d'exécution (100 = premier)                                    |
+- Slack : warn si `SLACK_TOKEN` manquant, pas d'erreur
+- Email : warn si `EMAIL_USER`/`EMAIL_PASS` manquants, pas d'erreur
+
+---
+
+### Injection *(V3)*
+
+Injecte des fichiers de consignes dans les projets pour guider les agents IA.
+
+**Fichiers :** `src/injection/`
+
+| Classe / Fichier        | Rôle                                                        |
+| ----------------------- | ----------------------------------------------------------- |
+| `checkInjectionStatus`  | Détecte les fichiers de consignes manquants/obsolètes       |
+| `injectFiles`           | Crée/met à jour les fichiers avec backup automatique        |
+| `validateConsignmentFiles` | Intègre la vérification dans le pipeline Prevention      |
+| Templates               | 6 agents : Claude, AGENTS, Cursor, Copilot, Windsurf, ESLint |
+
+**Templates disponibles :**
+
+| Agent     | Fichier                          | Version |
+| --------- | -------------------------------- | ------- |
+| Claude    | `CLAUDE.md`                      | 1.0.0   |
+| Générique | `AGENTS.md`                      | 1.0.0   |
+| Cursor    | `.cursorrules`                   | 1.0.0   |
+| Copilot   | `.github/copilot-instructions.md`| 1.0.0   |
+| Windsurf  | `.windsurfrules`                 | 1.0.0   |
+| ESLint TS | `.eslintrc.json`                 | 1.0.0   |
+| ESLint JS | `.eslintrc.json`                 | 1.0.0   |
+
+**Contenu des templates :**
+
+Chaque template contient :
+- Règles de sécurité (`safeSpawn()`, `sanitizePath()`, pas d'injection)
+- Interdiction du type `any` → utiliser `unknown`
+- Logging structuré (Winston, pas de `console.log`)
+- Instructions de test
+- Structure du projet
+- Erreurs courantes des agents IA à éviter
+
+**Utilisation :**
+
+```typescript
+import {
+  checkInjectionStatus,
+  injectFiles,
+  formatCheckResult,
+} from "./injection/index.js";
+
+// Vérifier l'état
+const status = await checkInjectionStatus({
+  projectDir: "./my-project",
+  agents: ["claude", "generic"],
+});
+console.log(formatCheckResult(status));
+
+// Injecter les fichiers manquants
+const results = await injectFiles({
+  projectDir: "./my-project",
+  agents: ["claude"],
+  force: false,
+  dryRun: false,
+});
+```
+
+---
+
+### Analysis *(V3)*
+
+Analyse la structure d'un projet et évalue des règles adaptatives.
+
+**Fichiers :** `src/analysis/`
+
+| Classe / Fichier     | Rôle                                                             |
+| -------------------- | ---------------------------------------------------------------- |
+| `analyzeProject`     | Détecte langage, package manager, framework, conventions, archi  |
+| `evaluateRules`      | Évalue 12 règles adaptatives contre l'analyse                   |
+| `getTriggeredRules`  | Retourne uniquement les règles déclenchées                       |
+| `formatEvaluations`  | Formate les résultats en texte lisible                           |
+
+**Ce que détecte `analyzeProject()` :**
+
+| Aspect         | Détection                                      |
+| -------------- | ---------------------------------------------- |
+| Langage        | TypeScript, JavaScript, mixed, unknown          |
+| Package manager| npm, yarn, pnpm                                |
+| Test framework | jest, vitest, mocha                            |
+| Architecture   | monorepo, single, library                      |
+| Framework      | react, vue, angular, svelte, express, next, etc.|
+| Conventions    | indent, quotes, semicolons, line endings        |
+| Consignment    | CLAUDE.md, AGENTS.md, .cursorrules, etc.       |
+
+**12 règles adaptatives :**
+
+| Règle                | Type    | Condition                           |
+| -------------------- | ------- | ----------------------------------- |
+| `no-any-type`        | enforce | TypeScript détecté                  |
+| `eslint-required`    | suggest | Pas d'ESLint → injecte config       |
+| `prettier-recommended`| suggest| ESLint sans Prettier                |
+| `tests-required`     | suggest | Pas de tests                        |
+| `winston-logging`    | enforce | TypeScript                          |
+| `safe-spawn`         | enforce | Toujours                            |
+| `sanitize-paths`     | enforce | Toujours                            |
+| `monorepo-structure` | suggest | Monorepo                            |
+| `consignment-files`  | suggest | Pas de fichiers consignes           |
+| `esm-modules`        | enforce | TypeScript                          |
+| `config-validation`  | enforce | Dossier config                      |
+| `no-console-log`     | enforce | TypeScript ou ESLint                |
+
+**Utilisation :**
+
+```typescript
+import {
+  analyzeProject,
+  evaluateRules,
+  formatAnalysis,
+  formatEvaluations,
+} from "./analysis/index.js";
+
+const analysis = await analyzeProject("./my-project");
+console.log(formatAnalysis(analysis));
+
+const evaluations = evaluateRules(analysis);
+console.log(formatEvaluations(evaluations));
+```
+
+---
+
+### Environment *(V4)*
+
+Détecte l'environnement système, les outils disponibles, et affiche un banner au démarrage.
+
+**Fichiers :** `src/environment/`
+
+| Classe / Fichier     | Rôle                                                             |
+| -------------------- | ---------------------------------------------------------------- |
+| `getSystemInfo`      | OS, CPU, RAM, GPU (registry QWORD), réseau (netsh+ipconfig)     |
+| `detectTools`        | Détecte outils dans le PATH + versions                          |
+| `detectDevEnvironment` | IDE (VS Code, JetBrains, Sublime, Vim), shell, Docker, WSL, CI |
+| `generateEnvReport`  | Agrège toutes les infos en un rapport                            |
+| `printBanner`        | Affiche le banner complet (détails)                              |
+| `printCompactBanner` | Affiche le banner compact (une ligne)                            |
+
+**Ce que détecte `getSystemInfo()` :**
+
+| Donnée      | Source                                      |
+| ----------- | ------------------------------------------- |
+| Platform    | `os.platform()` — win32 / linux / darwin     |
+| CPU         | `os.cpus()` — model, cores                   |
+| RAM         | `os.totalmem()` / `os.freemem()`             |
+| GPU VRAM    | Registry QWORD `qwMemorySize` (accurate)    |
+| Réseau      | `netsh` + `ipconfig` — interfaces, IP        |
+| Node/npm    | `process.version` + `npm --version`          |
+| Date/année  | `new Date().getFullYear()`                   |
+
+**Banner compact :**
+
+```
+minautor watcher v4.0.0 | Windows x64 | Node v24.2.0 | 12 GB GPU | 14/16 GB RAM | 3 tools OK
+```
+
+**Installer dynamique :** `scripts/install-tools.cjs` — détecte et installe automatiquement les outils manquants via npm.
+
+**Utilisation :**
+
+```typescript
+import {
+  generateEnvReport,
+  printBanner,
+  printCompactBanner,
+} from "./environment/index.js";
+
+const report = await generateEnvReport();
+printBanner(report);        // Affichage complet
+printCompactBanner(report); // Une ligne
+```
+
+---
+
+## Sécurité et stabilité (V2)
+
+Le watcher intègre un ensemble de protections issues de V2 :
+
+| Fonctionnalité                | Description                                                    |
+| ----------------------------- | -------------------------------------------------------------- |
+| `safeSpawn()`                 | Exécution de commandes shell sans injection de paths           |
+| `safeExecFile()`              | Exécution d'exécutables avec timeout                           |
+| `sanitizePath()`              | Nettoyage des paths avant utilisation                          |
+| `escapeHtml()`                | Échappement HTML pour les notifications                        |
+| `withFileLock()`              | Verrouillage par fichier pour éviter les concurrences          |
+| `CircuitBreaker`              | Protection contre les erreurs répétées (5 échecs → OPEN)       |
+| `retryWithBackoff()`          | Retry avec backoff exponentiel (3 tentatives)                  |
+| `writeFileWithBackup()`       | Écriture avec sauvegarde `.bak` automatique                    |
+| `restoreFromBackup()`         | Restauration depuis le backup                                  |
+| Script whitelist              | Seuls `npx eslint`, `npx prettier`, `npm run`, `node` autorisés|
+| Batch ESLint/Prettier         | 50 fichiers par invocation pour la performance                 |
+| LRU eviction                  | File d'attente bornée (1000 max) avec éviction                 |
+| Health check HTTP             | `GET /health`, `/ready`, `/metrics` (Prometheus)               |
+| Graceful drain                | Arrêt propre avec timeout configurable                         |
+| Logging structuré JSON        | `LOG_FORMAT=json` pour la production                           |
+| Signal handlers               | `SIGINT`/`SIGTERM` (shutdown), `SIGUSR1` (reload), `SIGUSR2` (restart) |
+| Injection auto ESLint         | Config `.eslintrc.json` injectée si manquante                  |
+| Skip notifications            | Slack/Email skip si credentials manquants (warn, pas error)    |
 
 ---
 
 ## Configuration
 
-### `.env.local`
+### `.env.example`
+
+Toutes les variables d'environnement sont documentées dans `.env.example` :
 
 ```env
-WATCH_DIR=./project            # Dossier à surveiller
+# Watcher / Core
+WATCH_DIR=./src
 EXCLUDED_DIRS=node_modules,.git,dist,build
-WATCH_EXTENSIONS=js,ts,jsx,tsx,json,md,css,scss,html
-PROCESSING_DELAY=100           # Délai avant traitement (ms)
-LOG_LEVEL=info
+WATCH_EXTENSIONS=js,ts,jsx,tsx,json,md
+PROCESSING_DELAY=100
+PORT=3000
 
-# Notifications
+# Logging
+LOG_LEVEL=success        # success | info | http | warn | error
+NODE_ENV=development
+LOG_FORMAT               # json pour la production
+
+# Slack
 SLACK_TOKEN=
+SLACK_CHANNEL=#general
+
+# Email
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
 EMAIL_USER=
 EMAIL_PASS=
+EMAIL_FROM=watcher@localhost
 EMAIL_TO=
 ```
 
@@ -209,6 +426,10 @@ Définit les règles de correction (corrections, conditions, notifications). Deu
 - **Format moderne :** `{ "rules": [ TriggerRule, ... ] }`
 - **Format legacy (supporté) :** `{ "corrections": [...], "conditions": [...], "notifications": {...} }`
 
+### `watcher.config.json` *(V2)*
+
+Configuration unifiée qui prend le dessus sur les fichiers legacy.
+
 ---
 
 ## CLI
@@ -217,14 +438,69 @@ Définit les règles de correction (corrections, conditions, notifications). Deu
 npm start -- [command] [options]
 
 Commands:
-  start [options]   Lance la surveillance
-    -d, --dir       Dossier à surveiller
-    --no-prevention Désactive le module de prévention
-    --no-trigger    Désactive le module de déclenchement
-  stop              Arrête le service
-  status            Affiche l'état des modules
-  reload            Recharge la configuration
-  test -f <file>    Teste les règles sur un fichier
+  start [options]              Lance la surveillance
+    -d, --dir <dir>            Dossier à surveiller
+    --no-prevention            Désactive le module de prévention
+    --no-trigger               Désactive le module de déclenchement
+
+  stop                         Arrête le service
+
+  status [--json]              Affiche l'état des modules
+
+  reload                       Recharge la configuration
+
+  test -f <file>               Teste les règles sur un fichier
+
+  preview <files...>           Preview des corrections (dry-run)
+    Affiche les différences sans écrire
+
+  scan [options]               Mode one-shot : analyse + correction + injection
+    -d, --dir <dir>            Dossier à scanner
+    --fix                      Corriger les erreurs détectées
+    --inject                   Injecter les fichiers de consignes manquants
+    --all                      --fix + --inject
+    --dry-run                  Afficher sans modifier
+    --report <file>            Générer un rapport JSON
+    --agents <agents>          Agents cibles (claude,generic,copilot,cursor,windsurf)
+
+  analyze [options]            Analyser la structure du projet
+    -d, --dir <dir>            Dossier à analyser
+    --json                     Sortie JSON
+    --rules-only               Afficher uniquement les règles
+
+  env [options]                Afficher le rapport d'environnement
+    --json                     Sortie JSON
+    --compact                  Banner compact uniquement
+
+  doctor [options]             Vérifier santé environnement + outils manquants
+    --fix                      Installer automatiquement les outils manquants
+
+  config [--validate]          Valide et affiche la configuration
+```
+
+**Exemples :**
+
+```bash
+# Scanner un projet et tout corriger
+watcher scan --all ./mon-projet
+
+# Voir ce qui serait corrigé sans modifier
+watcher scan --dry-run --all ./mon-projet
+
+# Analyser un projet et voir les règles adaptatives
+watcher analyze ./mon-projet
+
+# Injecter les fichiers de consignes uniquement
+watcher scan --inject ./mon-projet
+
+# Générer un rapport pour CI/CD
+watcher scan --all --report report.json ./mon-projet
+
+# Voir l'environnement
+watcher env
+
+# Vérifier et installer les outils manquants
+watcher doctor --fix
 ```
 
 ---
@@ -246,89 +522,34 @@ await service.stop();
 Utilisation modulaire :
 
 ```typescript
-import { createDetectionModule } from "watcher-service/detection";
-import { createPreventionModule } from "watcher-service/prevention";
-import { createTriggerModule } from "watcher-service/trigger";
-
-const detection = createDetectionModule({ watchDir: "./src" });
-await detection.start();
-```
-
----
-
-## Développement
-
-### Ajouter un validateur
-
-```typescript
+import { analyzeProject, evaluateRules } from "./analysis/index.js";
 import {
-  BaseValidator,
-  ValidatorRegistry,
-  ValidationResult,
-} from "../prevention/validators.js";
+  checkInjectionStatus,
+  injectFiles,
+} from "./injection/index.js";
+import { generateEnvReport } from "./environment/index.js";
 
-class MyValidator extends BaseValidator {
-  constructor() {
-    super("my-validator", { enabled: true, rules: {} });
-  }
+// Analyser un projet
+const analysis = await analyzeProject("./my-project");
+const rules = evaluateRules(analysis);
 
-  async validate(filePath: string): Promise<ValidationResult> {
-    // Logique de validation
-    return { isValid: true, errors: [], warnings: [] };
-  }
+// Injecter des fichiers de consignes
+const status = await checkInjectionStatus({
+  projectDir: "./my-project",
+  agents: ["claude", "generic"],
+});
+
+if (status.missingCount > 0) {
+  await injectFiles({
+    projectDir: "./my-project",
+    agents: ["claude"],
+  });
 }
 
-// Enregistrement
-registry.register("my-validator", new MyValidator());
-```
-
-### Ajouter un correcteur
-
-```typescript
-import { BaseCorrector, CorrectionResult, CorrectionRule } from '../trigger/correctors.js';
-
-class MyCorrector extends BaseCorrector {
-  constructor(config: CorrectionRule) {
-    super(config.id, config);
-  }
-
-  canCorrect(filePath: string, error?: any): boolean {
-    return filePath.endsWith('.myext');
-  }
-
-  async applyCorrection(filePath: string, error?: any): Promise<CorrectionResult> {
-    // Logique de correction
-    return { success: true, corrected: false, changes: [], executionTime: 0 };
-  }
-}
-
-// Enregistrement
-registry.register('my-corrector', new MyCorrector({ ... }));
-```
-
-### Ajouter un notifieur
-
-```typescript
-import {
-  BaseNotifier,
-  NotificationData,
-  NotificationResult,
-  NotificationChannel,
-} from "../trigger/notifiers.js";
-
-class WebhookNotifier extends BaseNotifier {
-  constructor() {
-    super("webhook", true);
-  }
-
-  async send(data: NotificationData): Promise<NotificationResult> {
-    // Envoi vers webhook
-    return { success: true, channel: NotificationChannel.CONSOLE };
-  }
-}
-
-// Enregistrement
-registry.register(NotificationChannel.CONSOLE, new WebhookNotifier());
+// Voir l'environnement
+const report = await generateEnvReport();
+console.log(report.systemInfo.osType);
+console.log(report.missingTools);
 ```
 
 ---
@@ -336,48 +557,65 @@ registry.register(NotificationChannel.CONSOLE, new WebhookNotifier());
 ## Tests
 
 ```bash
-npm test              # 54 tests, 4 suites
+npm test              # 244 tests, 17 suites
 npm run test:watch    # Mode watch
 npm run typecheck     # Vérification TypeScript
 npm run lint          # ESLint
 ```
 
-**Couverture actuelle :**
+**Couverture :**
 
-| Module                     | Tests | Couvert                                     |
-| -------------------------- | ----- | ------------------------------------------- |
-| `shared/utils.ts`          | 18    | Utilitaires fichiers, validation, debounce  |
-| `detection/filters.ts`     | 12    | Filtres extension, pattern, taille, presets |
-| `prevention/validators.ts` | 11    | JSON, patterns, registry                    |
-| `trigger/notifiers.ts`     | 13    | Console, fichier, registry, utils           |
+| Module                          | Tests | Couvert                                          |
+| ------------------------------- | ----- | ------------------------------------------------ |
+| `shared/utils.ts`               | 27    | Utilitaires fichiers, validation, debounce       |
+| `shared/circuit-breaker.ts`     | 11    | Circuit breaker, retryWithBackoff                |
+| `shared/unified-config.ts`      | 4     | Configuration unifiée                            |
+| `detection/filters.ts`          | 12    | Filtres extension, pattern, taille, presets      |
+| `prevention/validators.ts`      | 11    | JSON, patterns, registry                         |
+| `prevention/config.ts`          | 14    | Config manager, async factory                    |
+| `trigger/rules.test.ts`         | 15    | Trigger rules, CRUD, import/export               |
+| `trigger/correctors.test.ts`    | 9     | Correctors, backup/rollback                      |
+| `trigger/notifiers.test.ts`     | 13    | Console, fichier, registry, utils                |
+| `server/http.test.ts`           | 8     | Health check, ready, metrics, 503                |
+| `injection/injection.test.ts`   | 45    | Templates, detector, injector, validator, scan   |
+| `analysis/analysis.test.ts`     | 25    | Project analyzer, rules engine                   |
+| `environment/system-info.ts`    | 5     | SystemInfo, formatage                            |
+| `environment/tool-detector.ts`  | 4     | ToolDetector, detection, cache                   |
+| `environment/dev-environment.ts`| 4     | DevEnvironment, IDE, shell                       |
+| `environment/env-reporter.ts`   | 4     | EnvReporter, banner                              |
+| `integration/pipeline.test.ts`  | 10    | Pipeline complet, drain, dry-run, rollback       |
 
 ---
 
 ## Stack
 
-| Technologie  | Version | Usage                |
-| ------------ | ------- | -------------------- |
-| Node.js      | ^24     | Runtime              |
-| TypeScript   | ^5.9    | Langage              |
-| Chokidar     | ^3.5    | File watcher         |
-| ESLint       | ^8      | Linting              |
-| Prettier     | ^2.8    | Formatage            |
-| Winston      | ^3.8    | Logging              |
-| Commander.js | ^10     | CLI                  |
-| Joi          | ^17     | Validation de config |
-| Slack SDK    | ^6.8    | Notifications Slack  |
-| Nodemailer   | ^6.9    | Notifications email  |
-| Jest         | ^29     | Tests                |
-| ts-jest      | ^29     | Tests TypeScript     |
-| tsx          | ^4      | Dev runner           |
+| Technologie  | Version | Usage                           |
+| ------------ | ------- | ------------------------------- |
+| Node.js      | ^24     | Runtime                         |
+| TypeScript   | ^5.9    | Langage                         |
+| Chokidar     | ^3.5    | File watcher                    |
+| ESLint       | ^8      | Linting                         |
+| Prettier     | ^2.8    | Formatage                       |
+| Winston      | ^3.8    | Logging                         |
+| Chalk        | ^5      | Couleurs console                |
+| Commander.js | ^10     | CLI                             |
+| Joi          | ^17     | Validation de config            |
+| Slack SDK    | ^6.8    | Notifications Slack             |
+| Nodemailer   | ^6.9    | Notifications email             |
+| Jest         | ^29     | Tests                           |
+| ts-jest      | ^29     | Tests TypeScript                |
+| tsx          | ^4      | Dev runner                      |
+| fs-extra     | ^11     | Utilitaires fichiers            |
+| dotenv       | ^16     | Variables d'environnement       |
 
 ---
 
 <div align="center">
   <sub>
-    <a href="./PLAN.md">Plan de développement</a> ·
-    <a href="./watcher-specification.md">Spécifications</a> ·
-    <a href="./watcher-requirements.md">Exigences</a>
+    <a href="./PLAN-DEV-V4.md">Plan de développement V4</a> ·
+    <a href="./PLAN-DEV-V3.md">Plan de développement V3</a> ·
+    <a href="./PLAN-DEV-V2.md">Plan de développement V2</a> ·
+    <a href="./ETAT-DU-PROJET.md">État du projet</a>
   </sub>
   <br>
   <sub>minautor watcher project · MIT</sub>

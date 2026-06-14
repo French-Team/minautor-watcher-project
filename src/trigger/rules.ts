@@ -575,7 +575,7 @@ export class TriggerRuleManager {
   async reloadConfig(): Promise<void> {
     this.cooldowns.clear();
     this.loadConfig();
-    logger.info("Trigger rules configuration reloaded");
+    logger.success("Trigger rules configuration reloaded");
   }
 
   exportConfig(): { rules: TriggerRule[] } {
@@ -589,7 +589,7 @@ export class TriggerRuleManager {
     }
     this.rules = config.rules;
     await this.saveConfig();
-    logger.info("Trigger rules configuration imported successfully");
+    logger.success("Trigger rules configuration imported successfully");
   }
 }
 

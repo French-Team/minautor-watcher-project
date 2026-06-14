@@ -109,6 +109,13 @@ export class SlackNotifier extends BaseNotifier {
       return { success: true, channel: NotificationChannel.SLACK };
     }
 
+    // Skip if no token configured
+    const token = process.env.SLACK_TOKEN;
+    if (!token) {
+      logger.warn("Slack notification skipped: no SLACK_TOKEN configured");
+      return { success: true, channel: NotificationChannel.SLACK };
+    }
+
     try {
       logger.info(`Sending Slack notification: ${data.title}`);
 
@@ -179,7 +186,7 @@ export class SlackNotifier extends BaseNotifier {
         text: `${data.title}: ${data.message}`, // Fallback text
       });
 
-      logger.info(`Slack notification sent successfully: ${result.ts}`);
+      logger.success(`Slack notification sent successfully: ${result.ts}`);
 
       return {
         success: true,
@@ -187,7 +194,7 @@ export class SlackNotifier extends BaseNotifier {
         messageId: result.ts,
       };
     } catch (error) {
-      logger.error("Failed to send Slack notification:", error);
+      logger.warn("Failed to send Slack notification:", error);
       return {
         success: false,
         channel: NotificationChannel.SLACK,
@@ -267,6 +274,14 @@ export class EmailNotifier extends BaseNotifier {
       return { success: true, channel: NotificationChannel.EMAIL };
     }
 
+    // Skip if no credentials configured
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      logger.warn(
+        "Email notification skipped: no EMAIL_USER/EMAIL_PASS configured"
+      );
+      return { success: true, channel: NotificationChannel.EMAIL };
+    }
+
     try {
       logger.info(`Sending email notification: ${data.title}`);
 
@@ -282,7 +297,9 @@ export class EmailNotifier extends BaseNotifier {
         html,
       });
 
-      logger.info(`Email notification sent successfully: ${result.messageId}`);
+      logger.success(
+        `Email notification sent successfully: ${result.messageId}`
+      );
 
       return {
         success: true,
@@ -290,7 +307,7 @@ export class EmailNotifier extends BaseNotifier {
         messageId: result.messageId,
       };
     } catch (error) {
-      logger.error("Failed to send email notification:", error);
+      logger.warn("Failed to send email notification:", error);
       return {
         success: false,
         channel: NotificationChannel.EMAIL,
@@ -494,7 +511,7 @@ export class NotifierRegistry {
    */
   register(channel: NotificationChannel, notifier: BaseNotifier): void {
     this.notifiers.set(channel, notifier);
-    logger.info(`Notifier registered for channel: ${channel}`);
+    logger.success(`Notifier registered for channel: ${channel}`);
   }
 
   /**

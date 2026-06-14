@@ -1,33 +1,58 @@
 import winston from "winston";
+import chalk from "chalk";
 import path from "path";
+
+// Force chalk to always produce ANSI colors (logger targets console)
+chalk.level = 2;
 
 // Define log levels
 const logLevels = {
   error: 0,
   warn: 1,
   info: 2,
-  http: 3,
-  debug: 4,
+  success: 3,
+  http: 4,
+  debug: 5,
 };
 
-// Define colors for different log levels
+// Define colors for file logs (plain text, no ANSI)
 const logColors = {
   error: "red",
   warn: "yellow",
   info: "green",
+  success: "green",
   http: "magenta",
   debug: "white",
 };
 
 winston.addColors(logColors);
 
+// Level color map for console (chalk)
+const levelColorMap: Record<string, (s: string) => string> = {
+  error: chalk.red,
+  warn: chalk.hex("#FFA500"), // orange
+  info: chalk.hex("#D3D3D3"), // gris pale (light gray)
+  success: chalk.hex("#ADFF2F"), // vert citron / lime green
+  http: chalk.hex("#FFB6C1"), // rose (light pink)
+  debug: chalk.white,
+};
+
+// Custom console format with chalk-based coloring
+const chalkFormat = winston.format((info) => {
+  const colorFn = levelColorMap[info.level] || ((s: string) => s);
+  info.level = colorFn(info.level);
+  if (typeof info.message === "string") {
+    info.message = colorFn(info.message);
+  }
+  return info;
+});
+
 // Create the logger instance
 const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || "info",
+  level: process.env.LOG_LEVEL || "success",
   levels: logLevels,
   format: winston.format.combine(
     winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss:ms" }),
-    winston.format.colorize({ all: true }),
     winston.format.printf(({ timestamp, level, message, ...meta }) => {
       let metaStr = "";
       if (Object.keys(meta).length > 0) {
@@ -67,8 +92,7 @@ if (process.env.NODE_ENV !== "production") {
           winston.format.json()
         )
       : winston.format.combine(
-          winston.format.colorize(),
-          winston.format.simple(),
+          chalkFormat(),
           winston.format.printf(({ level, message, timestamp }) => {
             return `${timestamp} ${level}: ${message}`;
           })
@@ -81,11 +105,16 @@ if (process.env.NODE_ENV !== "production") {
   );
 }
 
-export default logger;
+// Custom logger type that includes the `success` level
+export interface WatcherLogger extends winston.Logger {
+  success(message: string, ...meta: unknown[]): winston.Logger;
+}
+
+export default logger as WatcherLogger;
 
 // Export additional utility functions
-export const createChildLogger = (moduleName: string) => {
-  return logger.child({ module: moduleName });
+export const createChildLogger = (moduleName: string): WatcherLogger => {
+  return logger.child({ module: moduleName }) as unknown as WatcherLogger;
 };
 
 export const logFileOperation = (

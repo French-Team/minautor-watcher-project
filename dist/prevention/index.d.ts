@@ -1,3 +1,6 @@
+import { ValidatorRegistry } from "./validators.js";
+import { ScriptRunner } from "./scripts.js";
+import { PreventionConfigManager, PreventionRule } from "./config.js";
 /**
  * Prevention result for a file
  */
@@ -15,7 +18,7 @@ export interface PreventionResult {
         severity: "error" | "warning" | "info";
     }>;
     executionTime: number;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
 }
 /**
  * Prevention module configuration
@@ -37,7 +40,15 @@ export declare class PreventionModule {
     private scriptRunner;
     private config;
     private isRunning;
-    constructor(config?: PreventionModuleConfig);
+    private constructor();
+    /**
+     * Create and initialize a PreventionModule (async factory)
+     */
+    static create(config?: PreventionModuleConfig, dependencies?: {
+        validatorRegistry?: ValidatorRegistry;
+        scriptRunner?: ScriptRunner;
+        configManager?: PreventionConfigManager;
+    }): Promise<PreventionModule>;
     /**
      * Start the prevention module
      */
@@ -68,7 +79,12 @@ export declare class PreventionModule {
         enabledRuleCount: number;
         validatorCount: number;
         scriptCount: number;
-        configStats: any;
+        configStats: {
+            totalRules: number;
+            enabledRules: number;
+            rulesByCategory: Record<string, number>;
+            rulesBySeverity: Record<string, number>;
+        };
     };
     /**
      * Reload configuration
@@ -77,7 +93,7 @@ export declare class PreventionModule {
     /**
      * Add a custom rule
      */
-    addRule(rule: any): Promise<void>;
+    addRule(rule: PreventionRule): Promise<void>;
     /**
      * Remove a rule
      */
@@ -88,9 +104,13 @@ export declare class PreventionModule {
     toggleRule(ruleId: string, enabled: boolean): Promise<boolean>;
 }
 /**
- * Factory function to create a prevention module
+ * Factory function to create a prevention module (async)
  */
-export declare function createPreventionModule(config?: PreventionModuleConfig): PreventionModule;
+export declare function createPreventionModule(config?: PreventionModuleConfig, dependencies?: {
+    validatorRegistry?: ValidatorRegistry;
+    scriptRunner?: ScriptRunner;
+    configManager?: PreventionConfigManager;
+}): Promise<PreventionModule>;
 /**
  * Quick setup function for common use cases
  */

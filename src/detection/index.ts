@@ -81,7 +81,7 @@ export class DetectionModule {
       this.setupWatcherEventForwarding();
 
       this.isRunning = true;
-      logger.info("Detection module started successfully");
+      logger.success("Detection module started successfully");
     } catch (error) {
       logger.error("Failed to start detection module:", error);
       throw error;
@@ -104,7 +104,7 @@ export class DetectionModule {
       await this.watcher.stop();
 
       this.isRunning = false;
-      logger.info("Detection module stopped successfully");
+      logger.success("Detection module stopped successfully");
     } catch (error) {
       logger.error("Failed to stop detection module:", error);
       throw error;
@@ -177,7 +177,7 @@ export class DetectionModule {
       this.setupWatcherEventForwarding();
     }
 
-    logger.info("Detection configuration reloaded");
+    logger.success("Detection configuration reloaded");
   }
 
   /**

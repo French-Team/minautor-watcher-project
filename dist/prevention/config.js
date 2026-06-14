@@ -51,16 +51,22 @@ export class PreventionConfigManager {
                 parallelExecution: Joi.boolean().default(true),
             }).default(),
         });
-        // Load initial configuration
-        this.config = this.loadDefaultConfig();
+    }
+    /**
+     * Create and initialize a PreventionConfigManager (async factory)
+     */
+    static async create(configPath) {
+        const manager = new PreventionConfigManager(configPath);
+        manager.config = await manager.loadDefaultConfig();
+        return manager;
     }
     /**
      * Load configuration from file or use defaults
      */
-    loadDefaultConfig() {
+    async loadDefaultConfig() {
         try {
-            if (fs.pathExistsSync(this.configPath)) {
-                const fileConfig = Utils.readJsonFile(this.configPath);
+            if (await fs.pathExists(this.configPath)) {
+                const fileConfig = (await fs.readJson(this.configPath));
                 if (fileConfig) {
                     const { error, value } = this.configSchema.validate(fileConfig, {
                         allowUnknown: true,
@@ -69,7 +75,7 @@ export class PreventionConfigManager {
                         logger.warn(`Configuration validation error: ${error.message}. Using defaults.`);
                     }
                     else {
-                        logger.info("Configuration loaded from file");
+                        logger.success("Configuration loaded from file");
                         return value;
                     }
                 }
@@ -220,7 +226,7 @@ export class PreventionConfigManager {
             this.config = updatedConfig;
             // Save to file
             await Utils.writeJsonFile(this.configPath, this.config);
-            logger.info("Configuration updated and saved");
+            logger.success("Configuration updated and saved");
         }
         catch (error) {
             logger.error("Error updating configuration:", error);
@@ -236,53 +242,74 @@ export class PreventionConfigManager {
     /**
      * Get rules applicable to a file
      */
-    getRulesForFile(filePath) {
+    async getRulesForFile(filePath) {
         const extension = Utils.getFileExtension(filePath);
         const enabledRules = this.getEnabledRules();
-        return enabledRules.filter((rule) => {
-            // Check file extension condition
+        const applicableRules = [];
+        for (const rule of enabledRules) {
             if (rule.conditions?.fileExtensions) {
                 if (!rule.conditions.fileExtensions.includes(extension)) {
-                    return false;
+                    continue;
                 }
             }
-            // Check file pattern condition
             if (rule.conditions?.filePatterns) {
                 const matchesPattern = rule.conditions.filePatterns.some((pattern) => filePath.includes(pattern));
                 if (!matchesPattern) {
-                    return false;
+                    continue;
                 }
             }
-            // Check file size conditions
             if (rule.conditions?.minFileSize || rule.conditions?.maxFileSize) {
                 try {
-                    const stats = fs.statSync(filePath);
+                    const stats = await fs.stat(filePath);
                     const fileSize = stats.size;
                     if (rule.conditions.minFileSize &&
                         fileSize < rule.conditions.minFileSize) {
-                        return false;
+                        continue;
                     }
                     if (rule.conditions.maxFileSize &&
                         fileSize > rule.conditions.maxFileSize) {
-                        return false;
+                        continue;
                     }
                 }
                 catch (error) {
                     logger.warn(`Could not check file size for ${filePath}:`, error);
-                    return false;
+                    continue;
                 }
             }
-            return true;
-        });
+            applicableRules.push(rule);
+        }
+        return applicableRules;
     }
     /**
      * Add a new rule
      */
     async addRule(rule) {
         // Validate the new rule
-        const ruleSchema = this.configSchema
-            .extract("rules")
-            .extract("items");
+        const ruleSchema = Joi.object({
+            id: Joi.string().required(),
+            name: Joi.string().required(),
+            description: Joi.string().required(),
+            enabled: Joi.boolean().default(true),
+            severity: Joi.string()
+                .valid("error", "warning", "info")
+                .default("warning"),
+            category: Joi.string()
+                .valid("syntax", "style", "security", "performance", "custom")
+                .default("custom"),
+            validators: Joi.array().items(Joi.string()).default([]),
+            scripts: Joi.array().items(Joi.string()).default([]),
+            conditions: Joi.object({
+                fileExtensions: Joi.array().items(Joi.string()),
+                filePatterns: Joi.array().items(Joi.string()),
+                minFileSize: Joi.number(),
+                maxFileSize: Joi.number(),
+            }).optional(),
+            actions: Joi.object({
+                autoFix: Joi.boolean().default(false),
+                notifyOnFailure: Joi.boolean().default(true),
+                blockCommit: Joi.boolean().default(false),
+            }).optional(),
+        });
         Utils.validateConfig(rule, ruleSchema);
         // Check if rule already exists
         const existingIndex = this.config.rules.findIndex((r) => r.id === rule.id);
@@ -359,8 +386,8 @@ export class PreventionConfigManager {
      * Reload configuration from file
      */
     async reloadConfig() {
-        this.config = this.loadDefaultConfig();
-        logger.info("Configuration reloaded");
+        this.config = await this.loadDefaultConfig();
+        logger.success("Configuration reloaded");
     }
     /**
      * Export configuration for backup
@@ -379,14 +406,14 @@ export class PreventionConfigManager {
         }
         this.config = config;
         await this.saveConfig();
-        logger.info("Configuration imported successfully");
+        logger.success("Configuration imported successfully");
     }
 }
 /**
- * Create a prevention configuration manager
+ * Create a prevention configuration manager (async factory)
  */
-export function createPreventionConfig(configPath) {
-    return new PreventionConfigManager(configPath);
+export async function createPreventionConfig(configPath) {
+    return PreventionConfigManager.create(configPath);
 }
 export default PreventionConfigManager;
 //# sourceMappingURL=config.js.map

@@ -134,7 +134,7 @@ export class PreventionConfigManager {
               `Configuration validation error: ${error.message}. Using defaults.`
             );
           } else {
-            logger.info("Configuration loaded from file");
+            logger.success("Configuration loaded from file");
             return value as PreventionConfig;
           }
         }
@@ -293,7 +293,7 @@ export class PreventionConfigManager {
 
       // Save to file
       await Utils.writeJsonFile(this.configPath, this.config);
-      logger.info("Configuration updated and saved");
+      logger.success("Configuration updated and saved");
     } catch (error) {
       logger.error("Error updating configuration:", error);
       throw error;
@@ -486,7 +486,7 @@ export class PreventionConfigManager {
    */
   async reloadConfig(): Promise<void> {
     this.config = await this.loadDefaultConfig();
-    logger.info("Configuration reloaded");
+    logger.success("Configuration reloaded");
   }
 
   /**
@@ -508,7 +508,7 @@ export class PreventionConfigManager {
 
     this.config = config;
     await this.saveConfig();
-    logger.info("Configuration imported successfully");
+    logger.success("Configuration imported successfully");
   }
 }
 

@@ -2,6 +2,7 @@ import { WebClient } from "@slack/web-api";
 import nodemailer from "nodemailer";
 import fs from "fs-extra";
 import path from "path";
+import { escapeHtml } from "../shared/utils.js";
 import { createChildLogger } from "../shared/logger.js";
 const logger = createChildLogger("trigger-notifiers");
 /**
@@ -68,10 +69,15 @@ export class SlackNotifier extends BaseNotifier {
         if (!this.isEnabled()) {
             return { success: true, channel: NotificationChannel.SLACK };
         }
+        // Skip if no token configured
+        const token = process.env.SLACK_TOKEN;
+        if (!token) {
+            logger.warn("Slack notification skipped: no SLACK_TOKEN configured");
+            return { success: true, channel: NotificationChannel.SLACK };
+        }
         try {
             logger.info(`Sending Slack notification: ${data.title}`);
             const emoji = this.getLevelEmoji(data.level);
-            const color = this.getLevelColor(data.level);
             const blocks = [
                 {
                     type: "header",
@@ -129,7 +135,7 @@ export class SlackNotifier extends BaseNotifier {
                 blocks,
                 text: `${data.title}: ${data.message}`, // Fallback text
             });
-            logger.info(`Slack notification sent successfully: ${result.ts}`);
+            logger.success(`Slack notification sent successfully: ${result.ts}`);
             return {
                 success: true,
                 channel: NotificationChannel.SLACK,
@@ -137,7 +143,7 @@ export class SlackNotifier extends BaseNotifier {
             };
         }
         catch (error) {
-            logger.error("Failed to send Slack notification:", error);
+            logger.warn("Failed to send Slack notification:", error);
             return {
                 success: false,
                 channel: NotificationChannel.SLACK,
@@ -198,6 +204,11 @@ export class EmailNotifier extends BaseNotifier {
         if (!this.isEnabled()) {
             return { success: true, channel: NotificationChannel.EMAIL };
         }
+        // Skip if no credentials configured
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+            logger.warn("Email notification skipped: no EMAIL_USER/EMAIL_PASS configured");
+            return { success: true, channel: NotificationChannel.EMAIL };
+        }
         try {
             logger.info(`Sending email notification: ${data.title}`);
             const subject = `[${data.level.toUpperCase()}] ${data.title}`;
@@ -210,7 +221,7 @@ export class EmailNotifier extends BaseNotifier {
                 text,
                 html,
             });
-            logger.info(`Email notification sent successfully: ${result.messageId}`);
+            logger.success(`Email notification sent successfully: ${result.messageId}`);
             return {
                 success: true,
                 channel: NotificationChannel.EMAIL,
@@ -218,7 +229,7 @@ export class EmailNotifier extends BaseNotifier {
             };
         }
         catch (error) {
-            logger.error("Failed to send email notification:", error);
+            logger.warn("Failed to send email notification:", error);
             return {
                 success: false,
                 channel: NotificationChannel.EMAIL,
@@ -229,19 +240,19 @@ export class EmailNotifier extends BaseNotifier {
     formatHtml(data) {
         const level = data.level.toUpperCase();
         const fileInfo = data.file
-            ? `<p><strong>File:</strong> ${path.basename(data.file)}</p>`
+            ? `<p><strong>File:</strong> ${escapeHtml(path.basename(data.file))}</p>`
             : "";
         const errorInfo = data.error
-            ? `<p><strong>Error:</strong> ${data.error.message}</p>`
+            ? `<p><strong>Error:</strong> ${escapeHtml(data.error.message)}</p>`
             : "";
         const metadataInfo = data.metadata
-            ? `<p><strong>Details:</strong><pre>${JSON.stringify(data.metadata, null, 2)}</pre></p>`
+            ? `<p><strong>Details:</strong><pre>${escapeHtml(JSON.stringify(data.metadata, null, 2))}</pre></p>`
             : "";
         return `
       <html>
         <body>
-          <h2 style="color: ${this.getLevelColor(data.level)};">[${level}] ${data.title}</h2>
-          <p>${data.message}</p>
+          <h2 style="color: ${this.getLevelColor(data.level)};">[${escapeHtml(level)}] ${escapeHtml(data.title)}</h2>
+          <p>${escapeHtml(data.message)}</p>
           ${fileInfo}
           ${errorInfo}
           ${metadataInfo}
@@ -394,7 +405,7 @@ export class NotifierRegistry {
      */
     register(channel, notifier) {
         this.notifiers.set(channel, notifier);
-        logger.info(`Notifier registered for channel: ${channel}`);
+        logger.success(`Notifier registered for channel: ${channel}`);
     }
     /**
      * Get a notifier by channel
@@ -451,8 +462,11 @@ export class NotifierRegistry {
 /**
  * Create default notifier registry with common notifiers
  */
-export function createNotifierRegistry() {
+export function createNotifierRegistry(options) {
     const registry = new NotifierRegistry();
+    if (options?.skipDefaults) {
+        return registry;
+    }
     // Register default notifiers
     registry.register(NotificationChannel.SLACK, new SlackNotifier());
     registry.register(NotificationChannel.EMAIL, new EmailNotifier());

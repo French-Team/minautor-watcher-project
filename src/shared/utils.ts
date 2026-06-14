@@ -44,10 +44,16 @@ export function safeSpawn(
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolve, reject) => {
     const timeout = options?.timeout ?? 60000;
+
+    // On Windows, shell: true is needed for .cmd extensions (npx, npm)
+    const isWindows = process.platform === "win32";
+    const needsShell = isWindows && /^(npx|npm|yarn|pnpm)$/i.test(command);
+
     const child = spawn(command, args, {
       cwd: options?.cwd,
       env: options?.env,
       stdio: ["ignore", "pipe", "pipe"],
+      shell: needsShell,
     });
 
     let stdout = "";

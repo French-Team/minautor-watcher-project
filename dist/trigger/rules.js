@@ -86,17 +86,21 @@ export class TriggerRuleManager {
     }
     convertLegacyConfig(raw) {
         const rules = [];
-        const corrections = raw.corrections || [];
-        const conditions = raw.conditions || [];
-        const notifications = raw.notifications || {};
+        const legacyRaw = raw;
+        const corrections = legacyRaw.corrections || [];
+        const conditions = legacyRaw.conditions || [];
+        const notifications = legacyRaw.notifications || {};
+        const autoCorrect = legacyRaw.autoCorrect || {};
         const conditionMap = new Map();
         for (const cond of conditions) {
-            conditionMap.set(cond.name, cond);
+            if (cond.name) {
+                conditionMap.set(cond.name, cond);
+            }
         }
         for (const corr of corrections) {
             const rule = {
-                id: corr.ruleId,
-                name: corr.description || corr.ruleId,
+                id: corr.ruleId || "unknown",
+                name: corr.description || corr.ruleId || "unnamed",
                 description: corr.description || "",
                 enabled: corr.enabled !== false,
                 priority: 1,
@@ -182,7 +186,7 @@ export class TriggerRuleManager {
                 if (cond.name === "file-too-large" && cond.action === "skip") {
                     rule.actions.unshift({
                         type: "skip",
-                        config: { maxFileSize: raw.autoCorrect?.maxFileSize || "1MB" },
+                        config: { maxFileSize: autoCorrect.maxFileSize || "1MB" },
                     });
                 }
             }
@@ -358,8 +362,6 @@ export class TriggerRuleManager {
         return true;
     }
     async addRule(rule) {
-        const ruleSchema = this.configSchema.extract("rules").$_terms
-            .items[0];
         const existingIndex = this.rules.findIndex((r) => r.id === rule.id);
         if (existingIndex >= 0) {
             this.rules[existingIndex] = rule;
@@ -420,7 +422,7 @@ export class TriggerRuleManager {
     async reloadConfig() {
         this.cooldowns.clear();
         this.loadConfig();
-        logger.info("Trigger rules configuration reloaded");
+        logger.success("Trigger rules configuration reloaded");
     }
     exportConfig() {
         return { rules: JSON.parse(JSON.stringify(this.rules)) };
@@ -432,7 +434,7 @@ export class TriggerRuleManager {
         }
         this.rules = config.rules;
         await this.saveConfig();
-        logger.info("Trigger rules configuration imported successfully");
+        logger.success("Trigger rules configuration imported successfully");
     }
 }
 export function createTriggerRuleManager(configPath) {

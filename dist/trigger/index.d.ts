@@ -1,4 +1,6 @@
-import { TriggerContext, TriggerResult } from "./rules.js";
+import { CorrectorRegistry } from "./correctors.js";
+import { NotifierRegistry } from "./notifiers.js";
+import { TriggerRuleManager, TriggerContext, TriggerResult, TriggerRule } from "./rules.js";
 /**
  * Trigger module configuration
  */
@@ -19,7 +21,12 @@ export declare class TriggerModule {
     private notifierRegistry;
     private config;
     private isRunning;
-    constructor(config?: TriggerModuleConfig);
+    private circuitBreakers;
+    constructor(config?: TriggerModuleConfig, dependencies?: {
+        ruleManager?: TriggerRuleManager;
+        correctorRegistry?: CorrectorRegistry;
+        notifierRegistry?: NotifierRegistry;
+    });
     /**
      * Start the trigger module
      */
@@ -45,7 +52,7 @@ export declare class TriggerModule {
      */
     private executeAction;
     /**
-     * Execute correction action
+     * Execute correction action with retry and circuit breaker
      */
     private executeCorrection;
     /**
@@ -78,7 +85,12 @@ export declare class TriggerModule {
         enabledRuleCount: number;
         correctorCount: number;
         notifierCount: number;
-        ruleStats: any;
+        ruleStats: {
+            totalRules: number;
+            enabledRules: number;
+            rulesByPriority: Record<string, number>;
+            activeCooldowns: number;
+        };
     };
     /**
      * Reload configuration
@@ -87,7 +99,7 @@ export declare class TriggerModule {
     /**
      * Add a custom rule
      */
-    addRule(rule: any): Promise<void>;
+    addRule(rule: TriggerRule): Promise<void>;
     /**
      * Remove a rule
      */
@@ -100,7 +112,11 @@ export declare class TriggerModule {
 /**
  * Factory function to create a trigger module
  */
-export declare function createTriggerModule(config?: TriggerModuleConfig): TriggerModule;
+export declare function createTriggerModule(config?: TriggerModuleConfig, dependencies?: {
+    ruleManager?: TriggerRuleManager;
+    correctorRegistry?: CorrectorRegistry;
+    notifierRegistry?: NotifierRegistry;
+}): TriggerModule;
 /**
  * Quick setup function for common use cases
  */

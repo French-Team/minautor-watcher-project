@@ -19,6 +19,7 @@ export interface WatcherConfig {
     processingDelay: number;
     persistent: boolean;
     ignoreInitial: boolean;
+    maxQueueSize?: number;
 }
 /**
  * File watcher class that monitors file system changes
@@ -27,6 +28,7 @@ export declare class Watcher extends EventEmitter {
     private watcher;
     private config;
     private processingQueue;
+    private maxQueueSize;
     constructor(config: WatcherConfig);
     /**
      * Start watching the specified directory

@@ -112,7 +112,7 @@ export class PreventionModule {
       await this.updateComponentConfigurations();
 
       this.isRunning = true;
-      logger.info("Prevention module started successfully");
+      logger.success("Prevention module started successfully");
     } catch (error) {
       logger.error("Failed to start prevention module:", error);
       throw error;
@@ -135,7 +135,7 @@ export class PreventionModule {
       this.scriptRunner.stopAllScripts();
 
       this.isRunning = false;
-      logger.info("Prevention module stopped successfully");
+      logger.success("Prevention module stopped successfully");
     } catch (error) {
       logger.error("Failed to stop prevention module:", error);
       throw error;
@@ -356,7 +356,7 @@ export class PreventionModule {
               ?.customRules as ValidatorConfig["customRules"]) ?? [],
         });
         this.validatorRegistry.register(customValidator.name, validator);
-        logger.info(`Custom validator registered: ${customValidator.name}`);
+        logger.success(`Custom validator registered: ${customValidator.name}`);
       }
     }
   }
@@ -397,7 +397,7 @@ export class PreventionModule {
   async reloadConfig(): Promise<void> {
     await this.configManager.reloadConfig();
     await this.updateComponentConfigurations();
-    logger.info("Configuration reloaded");
+    logger.success("Configuration reloaded");
   }
 
   /**

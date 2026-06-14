@@ -18,6 +18,16 @@ import type {
 
 // Re-export for backward compatibility
 export type { ServiceMetrics } from "./types/common.js";
+export {
+  CURRENT_YEAR,
+  WATCHER_VERSION,
+  getSystemInfo,
+  detectTools,
+  detectDevEnvironment,
+  generateEnvReport,
+  printBanner,
+  printCompactBanner,
+} from "./environment/index.js";
 
 // Load environment variables
 dotenv.config({ path: ".env.local" });
@@ -117,7 +127,7 @@ export class WatcherService {
         }
       }
 
-      logger.info("Watcher Service initialized successfully");
+      logger.success("Watcher Service initialized successfully");
     } catch (error) {
       logger.error("Failed to initialize Watcher Service:", error);
       throw error;
@@ -148,8 +158,35 @@ export class WatcherService {
         this.triggerModule.start(),
       ]);
 
-      logger.info("Watcher Service started successfully");
+      logger.success("Watcher Service started successfully");
       this.isRunning = true;
+
+      // Register signal handlers for graceful shutdown
+      const shutdown = async (signal: string) => {
+        logger.info(`Received ${signal}, shutting down gracefully...`);
+        await this.stop();
+        process.exit(0);
+      };
+
+      process.on("SIGINT", () => shutdown("SIGINT"));
+      process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+      // USR1 = reload config, USR2 = graceful restart (Unix only)
+      if (typeof process.on === "function") {
+        process.on("SIGUSR1", () => {
+          logger.info("Received SIGUSR1, reloading configuration...");
+          this.reloadConfig().catch((err) => {
+            logger.error("Failed to reload config:", err);
+          });
+        });
+
+        process.on("SIGUSR2", async () => {
+          logger.info("Received SIGUSR2, performing graceful restart...");
+          await this.stop();
+          await this.initialize();
+          await this.start();
+        });
+      }
     } catch (error) {
       logger.error("Failed to start Watcher Service:", error);
       throw error;
@@ -197,7 +234,7 @@ export class WatcherService {
         ].filter(Boolean)
       );
 
-      logger.info("Watcher Service stopped successfully");
+      logger.success("Watcher Service stopped successfully");
       this.isRunning = false;
       this.draining = false;
     } catch (error) {
@@ -389,7 +426,7 @@ export class WatcherService {
       })
     );
 
-    logger.info("Module communication setup completed");
+    logger.success("Module communication setup completed");
   }
 
   /**
@@ -425,7 +462,7 @@ export class WatcherService {
         ].filter(Boolean)
       );
 
-      logger.info("Configuration reloaded successfully");
+      logger.success("Configuration reloaded successfully");
     } catch (error) {
       logger.error("Error reloading configuration:", error);
       throw error;

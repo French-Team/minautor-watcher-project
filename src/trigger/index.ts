@@ -81,7 +81,7 @@ export class TriggerModule {
       logger.info("Starting trigger module...");
 
       this.isRunning = true;
-      logger.info("Trigger module started successfully");
+      logger.success("Trigger module started successfully");
     } catch (error) {
       logger.error("Failed to start trigger module:", error);
       throw error;
@@ -101,7 +101,7 @@ export class TriggerModule {
       logger.info("Stopping trigger module...");
 
       this.isRunning = false;
-      logger.info("Trigger module stopped successfully");
+      logger.success("Trigger module stopped successfully");
     } catch (error) {
       logger.error("Failed to stop trigger module:", error);
       throw error;
@@ -178,7 +178,7 @@ export class TriggerModule {
         results.push(result);
 
         if (result.success) {
-          logger.info(`Trigger rule ${rule.id} executed successfully`);
+          logger.success(`Trigger rule ${rule.id} executed successfully`);
         } else {
           logger.warn(`Trigger rule ${rule.id} failed`);
         }
@@ -648,7 +648,7 @@ export class TriggerModule {
    */
   async reloadConfig(): Promise<void> {
     await this.ruleManager.reloadConfig();
-    logger.info("Trigger configuration reloaded");
+    logger.success("Trigger configuration reloaded");
   }
 
   /**

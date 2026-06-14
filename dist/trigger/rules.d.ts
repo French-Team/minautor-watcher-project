@@ -10,25 +10,28 @@ export interface TriggerRule {
         filePatterns?: string[];
         errorPatterns?: string[];
         severity?: "error" | "warning" | "info";
-        metadataConditions?: Record<string, any>;
+        metadataConditions?: Record<string, unknown>;
     };
     actions: Array<{
         type: "correct" | "notify" | "log" | "skip" | "custom";
         target?: string;
-        config?: Record<string, any>;
+        config?: Record<string, unknown>;
         delay?: number;
     }>;
     cooldown?: {
         enabled: boolean;
         period: number;
     };
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
 }
 export interface TriggerContext {
     filePath: string;
     eventType: string;
-    error?: any;
-    metadata?: Record<string, any>;
+    error?: Error | {
+        message: string;
+        [key: string]: unknown;
+    };
+    metadata?: Record<string, unknown>;
     timestamp: Date;
 }
 export interface TriggerResult {
@@ -37,7 +40,7 @@ export interface TriggerResult {
     actions: Array<{
         type: string;
         success: boolean;
-        result?: any;
+        result?: string | unknown[] | Record<string, unknown>;
         error?: Error;
     }>;
     executionTime: number;

@@ -1,6 +1,6 @@
 import { WatcherEvent, createWatcher } from "./watcher.js";
-import { FilterPresets, createFileFilter } from "./filters.js";
-import { DetectionEvent, eventBus } from "./events.js";
+import { FilterPresets, createFileFilter, } from "./filters.js";
+import { DetectionEvent, eventBus as defaultEventBus, } from "./events.js";
 import { Utils, ConfigSchemas } from "../shared/utils.js";
 import { createChildLogger } from "../shared/logger.js";
 const logger = createChildLogger("detection");
@@ -13,9 +13,9 @@ export class DetectionModule {
     eventBus;
     config;
     isRunning = false;
-    constructor(config) {
+    constructor(config, dependencies) {
         this.config = config;
-        this.eventBus = eventBus;
+        this.eventBus = dependencies?.eventBus || defaultEventBus;
         // Create watcher instance
         this.watcher = createWatcher({
             watchDir: config.watchDir,
@@ -23,13 +23,12 @@ export class DetectionModule {
             watchExtensions: config.watchExtensions,
             processingDelay: config.processingDelay,
         });
-        // Create filter instance
+        // Create filter instance (note: extensions also filtered by Watcher.shouldProcessFile -
+        // double-check is intentional for defense-in-depth when FileFilter is used standalone)
         const filterCriteria = config.filterPreset
             ? FilterPresets[config.filterPreset]()
             : config.customFilters || {};
         this.filter = createFileFilter(filterCriteria);
-        // Set up internal event handlers
-        this.setupEventHandlers();
     }
     /**
      * Start the detection module
@@ -46,7 +45,7 @@ export class DetectionModule {
             // Set up watcher event forwarding
             this.setupWatcherEventForwarding();
             this.isRunning = true;
-            logger.info("Detection module started successfully");
+            logger.success("Detection module started successfully");
         }
         catch (error) {
             logger.error("Failed to start detection module:", error);
@@ -66,7 +65,7 @@ export class DetectionModule {
             // Stop the file watcher
             await this.watcher.stop();
             this.isRunning = false;
-            logger.info("Detection module stopped successfully");
+            logger.success("Detection module stopped successfully");
         }
         catch (error) {
             logger.error("Failed to stop detection module:", error);
@@ -94,29 +93,35 @@ export class DetectionModule {
      * Reload configuration
      */
     async reloadConfig() {
-        logger.info("Detection configuration reloaded");
-    }
-    /**
-     * Set up internal event handlers
-     */
-    setupEventHandlers() {
-        // Handle watcher events and forward them
-        this.watcher.on(WatcherEvent.FILE_ADDED, (event) => {
-            this.handleFileEvent(DetectionEvent.FILE_DETECTED, event, "watcher");
-        });
-        this.watcher.on(WatcherEvent.FILE_CHANGED, (event) => {
-            this.handleFileEvent(DetectionEvent.FILE_MODIFIED, event, "watcher");
-        });
-        this.watcher.on(WatcherEvent.FILE_DELETED, (event) => {
-            this.handleFileEvent(DetectionEvent.FILE_DELETED, event, "watcher");
-        });
-        this.watcher.on(WatcherEvent.WATCHER_READY, () => {
-            logger.info("File watcher is ready");
-        });
-        this.watcher.on(WatcherEvent.WATCHER_ERROR, (error) => {
-            logger.error("Watcher error:", error);
-            this.eventBus.emitDetectionError(error, "watcher");
-        });
+        logger.info("Reloading detection configuration...");
+        // Re-read configuration from environment variables
+        const newConfig = {
+            watchDir: process.env.WATCH_DIR || this.config.watchDir,
+            excludedDirs: (process.env.EXCLUDED_DIRS || this.config.excludedDirs.join(",")).split(","),
+            watchExtensions: (process.env.WATCH_EXTENSIONS || this.config.watchExtensions.join(",")).split(","),
+            processingDelay: parseInt(process.env.PROCESSING_DELAY || String(this.config.processingDelay)),
+            filterPreset: this.config.filterPreset,
+            customFilters: this.config.customFilters,
+        };
+        this.config = newConfig;
+        // Recreate the filter with updated criteria
+        const filterCriteria = newConfig.filterPreset
+            ? FilterPresets[newConfig.filterPreset]()
+            : newConfig.customFilters || {};
+        this.filter = createFileFilter(filterCriteria);
+        // If running, restart the watcher with new config
+        if (this.isRunning) {
+            await this.watcher.stop();
+            this.watcher = createWatcher({
+                watchDir: newConfig.watchDir,
+                excludedDirs: newConfig.excludedDirs,
+                watchExtensions: newConfig.watchExtensions,
+                processingDelay: newConfig.processingDelay,
+            });
+            await this.watcher.start();
+            this.setupWatcherEventForwarding();
+        }
+        logger.success("Detection configuration reloaded");
     }
     /**
      * Set up forwarding of watcher events to detection events
@@ -139,42 +144,19 @@ export class DetectionModule {
         this.watcher.on(WatcherEvent.FILE_ADDED, forwardEvent(DetectionEvent.FILE_DETECTED));
         this.watcher.on(WatcherEvent.FILE_CHANGED, forwardEvent(DetectionEvent.FILE_MODIFIED));
         this.watcher.on(WatcherEvent.FILE_DELETED, forwardEvent(DetectionEvent.FILE_DELETED));
-    }
-    /**
-     * Handle file events with processing tracking
-     */
-    async handleFileEvent(eventType, fileEvent, source) {
-        try {
-            // Apply filters
-            const filterResult = await this.filter.apply(fileEvent);
-            if (!filterResult.passed) {
-                logger.debug(`File filtered out: ${fileEvent.filePath} - ${filterResult.reason}`);
-                return;
-            }
-            // Emit the filtered event
-            logger.info(`${eventType}: ${fileEvent.filePath}`);
-            switch (eventType) {
-                case DetectionEvent.FILE_DETECTED:
-                    this.eventBus.emitFileDetected(fileEvent, source);
-                    break;
-                case DetectionEvent.FILE_MODIFIED:
-                    this.eventBus.emitFileModified(fileEvent);
-                    break;
-                case DetectionEvent.FILE_DELETED:
-                    this.eventBus.emitFileDeleted(fileEvent);
-                    break;
-            }
-        }
-        catch (error) {
-            logger.error(`Error handling file event ${eventType}:`, error);
-            this.eventBus.emitDetectionError(error instanceof Error ? error : new Error(String(error)), "file_event_handler", fileEvent);
-        }
+        this.watcher.on(WatcherEvent.WATCHER_READY, () => {
+            logger.info("File watcher is ready");
+        });
+        this.watcher.on(WatcherEvent.WATCHER_ERROR, (error) => {
+            logger.error("Watcher error:", error);
+            this.eventBus.emitDetectionError(error, "watcher");
+        });
     }
 }
 /**
  * Factory function to create a detection module
  */
-export function createDetectionModule(config) {
+export function createDetectionModule(config, dependencies) {
     const defaultConfig = {
         watchDir: process.env.WATCH_DIR || process.cwd(),
         excludedDirs: (process.env.EXCLUDED_DIRS || "node_modules,.git,dist,build").split(","),
@@ -185,24 +167,15 @@ export function createDetectionModule(config) {
     const finalConfig = { ...defaultConfig, ...config };
     // Validate configuration
     Utils.validateConfig(finalConfig, ConfigSchemas.watcherConfig);
-    return new DetectionModule(finalConfig);
+    return new DetectionModule(finalConfig, dependencies);
 }
 /**
  * Quick setup function for common use cases
  */
 export async function setupDetection(config) {
     const module = createDetectionModule(config);
-    // Set up graceful shutdown
-    process.on("SIGINT", async () => {
-        logger.info("Received SIGINT, shutting down detection module...");
-        await module.stop();
-        process.exit(0);
-    });
-    process.on("SIGTERM", async () => {
-        logger.info("Received SIGTERM, shutting down detection module...");
-        await module.stop();
-        process.exit(0);
-    });
+    // Note: Signal handlers (SIGINT/SIGTERM) are managed centrally
+    // by WatcherService in src/index.ts
     return module;
 }
 export default DetectionModule;

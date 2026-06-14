@@ -1,7 +1,8 @@
 import { createCorrectorRegistry } from "./correctors.js";
-import { createNotifierRegistry, NotificationUtils, } from "./notifiers.js";
+import { createNotifierRegistry, NotificationUtils, NotificationLevel, } from "./notifiers.js";
 import { createTriggerRuleManager, } from "./rules.js";
-import { Utils } from "../shared/utils.js";
+import { Utils, safeSpawn } from "../shared/utils.js";
+import { CircuitBreaker, retryWithBackoff } from "../shared/circuit-breaker.js";
 import { createChildLogger } from "../shared/logger.js";
 const logger = createChildLogger("trigger");
 /**
@@ -13,7 +14,8 @@ export class TriggerModule {
     notifierRegistry;
     config;
     isRunning = false;
-    constructor(config = {}) {
+    circuitBreakers = new Map();
+    constructor(config = {}, dependencies) {
         this.config = {
             enabled: true,
             autoCorrect: true,
@@ -22,10 +24,13 @@ export class TriggerModule {
             parallelExecution: true,
             ...config,
         };
-        // Initialize components
-        this.ruleManager = createTriggerRuleManager(config.configPath);
-        this.correctorRegistry = createCorrectorRegistry();
-        this.notifierRegistry = createNotifierRegistry();
+        // Initialize components (with dependency injection support)
+        this.ruleManager =
+            dependencies?.ruleManager || createTriggerRuleManager(config.configPath);
+        this.correctorRegistry =
+            dependencies?.correctorRegistry || createCorrectorRegistry();
+        this.notifierRegistry =
+            dependencies?.notifierRegistry || createNotifierRegistry();
     }
     /**
      * Start the trigger module
@@ -38,7 +43,7 @@ export class TriggerModule {
         try {
             logger.info("Starting trigger module...");
             this.isRunning = true;
-            logger.info("Trigger module started successfully");
+            logger.success("Trigger module started successfully");
         }
         catch (error) {
             logger.error("Failed to start trigger module:", error);
@@ -56,7 +61,7 @@ export class TriggerModule {
         try {
             logger.info("Stopping trigger module...");
             this.isRunning = false;
-            logger.info("Trigger module stopped successfully");
+            logger.success("Trigger module stopped successfully");
         }
         catch (error) {
             logger.error("Failed to stop trigger module:", error);
@@ -109,7 +114,7 @@ export class TriggerModule {
                 const result = await this.executeRule(rule, context);
                 results.push(result);
                 if (result.success) {
-                    logger.info(`Trigger rule ${rule.id} executed successfully`);
+                    logger.success(`Trigger rule ${rule.id} executed successfully`);
                 }
                 else {
                     logger.warn(`Trigger rule ${rule.id} failed`);
@@ -205,7 +210,7 @@ export class TriggerModule {
         }
     }
     /**
-     * Execute correction action
+     * Execute correction action with retry and circuit breaker
      */
     async executeCorrection(action, context) {
         if (!this.config.autoCorrect) {
@@ -217,6 +222,9 @@ export class TriggerModule {
         }
         try {
             const correctorName = action.target;
+            if (!correctorName) {
+                throw new Error("Corrector action missing target");
+            }
             const corrector = this.correctorRegistry.get(correctorName);
             if (!corrector) {
                 throw new Error(`Corrector not found: ${correctorName}`);
@@ -228,7 +236,13 @@ export class TriggerModule {
                     result: `Corrector ${correctorName} is disabled`,
                 };
             }
-            const correctionResults = await this.correctorRegistry.applyCorrections(context.filePath, context.error);
+            // Get or create circuit breaker for this corrector
+            if (!this.circuitBreakers.has(correctorName)) {
+                this.circuitBreakers.set(correctorName, new CircuitBreaker(5, 60000));
+            }
+            const circuitBreaker = this.circuitBreakers.get(correctorName);
+            // Execute with retry + circuit breaker
+            const correctionResults = await circuitBreaker.execute(() => retryWithBackoff(() => this.correctorRegistry.applyCorrections(context.filePath, context.error), 3, 1000));
             const success = correctionResults.every((result) => result.success);
             return {
                 type: "correct",
@@ -249,12 +263,20 @@ export class TriggerModule {
      */
     async executeNotification(action, context) {
         try {
-            const channels = action.target.split(",").map((c) => c.trim());
-            const level = action.config?.level || "info";
+            if (!action.target) {
+                throw new Error("Notify action missing target channels");
+            }
+            const channels = action.target
+                .split(",")
+                .map((c) => c.trim());
+            const level = action.config?.level || NotificationLevel.INFO;
             // Create notification data based on context
             let notificationData;
             if (context.error) {
-                notificationData = NotificationUtils.createErrorNotification(`Trigger Rule: ${context.eventType}`, context.error, context.filePath, { ruleId: context.metadata?.ruleId });
+                const errorObj = context.error instanceof Error
+                    ? context.error
+                    : new Error(context.error.message);
+                notificationData = NotificationUtils.createErrorNotification(`Trigger Rule: ${context.eventType}`, errorObj, context.filePath, { ruleId: context.metadata?.ruleId });
             }
             else {
                 notificationData = NotificationUtils.createFileNotification(`Trigger Rule: ${context.eventType}`, `File ${context.eventType}: ${context.filePath}`, context.filePath, level, { ruleId: context.metadata?.ruleId });
@@ -309,7 +331,8 @@ export class TriggerModule {
             // Check skip conditions
             if (action.config?.maxFileSize) {
                 const stats = await Utils.fs.stat(context.filePath);
-                if (stats.size > action.config.maxFileSize) {
+                const maxSizeBytes = Utils.parseFileSize(String(action.config.maxFileSize));
+                if (stats.size > maxSizeBytes) {
                     logger.info(`Skipping file ${context.filePath} due to size limit`);
                     return {
                         type: "skip",
@@ -347,13 +370,33 @@ export class TriggerModule {
                 return { type: "custom", success: true, result };
             }
             if (script && typeof script === "string") {
-                const { execSync } = await import("child_process");
-                const cmd = script
+                // Whitelist: only allow known safe commands
+                const allowedCommands = [
+                    "npx eslint",
+                    "npx prettier",
+                    "npm run",
+                    "node",
+                ];
+                const isAllowed = allowedCommands.some((cmd) => script.trim().startsWith(cmd));
+                if (!isAllowed) {
+                    logger.warn(`Script not in whitelist, blocking: ${script.substring(0, 100)}`);
+                    return {
+                        type: "custom",
+                        success: false,
+                        error: new Error(`Script not allowed. Whitelist: ${allowedCommands.join(", ")}`),
+                    };
+                }
+                // Parse command and args from script string safely
+                const parts = script.split(/\s+/);
+                const cmd = parts[0];
+                const args = parts
+                    .slice(1)
+                    .map((a) => a
                     .replace(/\{\{filePath\}\}/g, context.filePath)
-                    .replace(/\{\{eventType\}\}/g, context.eventType);
-                const output = execSync(cmd, { encoding: "utf-8", timeout: 30000 });
-                logger.info(`Custom script executed: ${script}`);
-                return { type: "custom", success: true, result: output.trim() };
+                    .replace(/\{\{eventType\}\}/g, context.eventType));
+                logger.info(`Executing whitelisted script: ${cmd} ${args.join(" ")}`);
+                const { stdout } = await safeSpawn(cmd, args, { timeout: 30000 });
+                return { type: "custom", success: true, result: stdout.trim() };
             }
             throw new Error("Custom action requires a config.handler function or config.script command");
         }
@@ -400,7 +443,7 @@ export class TriggerModule {
      */
     async reloadConfig() {
         await this.ruleManager.reloadConfig();
-        logger.info("Trigger configuration reloaded");
+        logger.success("Trigger configuration reloaded");
     }
     /**
      * Add a custom rule
@@ -424,8 +467,8 @@ export class TriggerModule {
 /**
  * Factory function to create a trigger module
  */
-export function createTriggerModule(config) {
-    return new TriggerModule(config);
+export function createTriggerModule(config, dependencies) {
+    return new TriggerModule(config, dependencies);
 }
 /**
  * Quick setup function for common use cases

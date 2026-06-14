@@ -1,27 +1,50 @@
 import winston from "winston";
+import chalk from "chalk";
 import path from "path";
+// Force chalk to always produce ANSI colors (logger targets console)
+chalk.level = 2;
 // Define log levels
 const logLevels = {
     error: 0,
     warn: 1,
     info: 2,
-    http: 3,
-    debug: 4,
+    success: 3,
+    http: 4,
+    debug: 5,
 };
-// Define colors for different log levels
+// Define colors for file logs (plain text, no ANSI)
 const logColors = {
     error: "red",
     warn: "yellow",
     info: "green",
+    success: "green",
     http: "magenta",
     debug: "white",
 };
 winston.addColors(logColors);
+// Level color map for console (chalk)
+const levelColorMap = {
+    error: chalk.red,
+    warn: chalk.hex("#FFA500"), // orange
+    info: chalk.hex("#D3D3D3"), // gris pale (light gray)
+    success: chalk.hex("#ADFF2F"), // vert citron / lime green
+    http: chalk.hex("#FFB6C1"), // rose (light pink)
+    debug: chalk.white,
+};
+// Custom console format with chalk-based coloring
+const chalkFormat = winston.format((info) => {
+    const colorFn = levelColorMap[info.level] || ((s) => s);
+    info.level = colorFn(info.level);
+    if (typeof info.message === "string") {
+        info.message = colorFn(info.message);
+    }
+    return info;
+});
 // Create the logger instance
 const logger = winston.createLogger({
-    level: process.env.LOG_LEVEL || "info",
+    level: process.env.LOG_LEVEL || "success",
     levels: logLevels,
-    format: winston.format.combine(winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss:ms" }), winston.format.colorize({ all: true }), winston.format.printf(({ timestamp, level, message, ...meta }) => {
+    format: winston.format.combine(winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss:ms" }), winston.format.printf(({ timestamp, level, message, ...meta }) => {
         let metaStr = "";
         if (Object.keys(meta).length > 0) {
             metaStr = `\n${JSON.stringify(meta, null, 2)}`;
@@ -45,10 +68,13 @@ const logger = winston.createLogger({
 });
 // If we're not in production then log to the console
 if (process.env.NODE_ENV !== "production") {
-    logger.add(new winston.transports.Console({
-        format: winston.format.combine(winston.format.colorize(), winston.format.simple(), winston.format.printf(({ level, message, timestamp }) => {
+    const logFormat = process.env.LOG_FORMAT === "json"
+        ? winston.format.combine(winston.format.timestamp(), winston.format.json())
+        : winston.format.combine(chalkFormat(), winston.format.printf(({ level, message, timestamp }) => {
             return `${timestamp} ${level}: ${message}`;
-        })),
+        }));
+    logger.add(new winston.transports.Console({
+        format: logFormat,
     }));
 }
 export default logger;

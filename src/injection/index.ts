@@ -25,6 +25,7 @@ export {
   getTemplateById,
   getFileNameForAgent,
   getManagedHeader,
+  getEslintTemplate,
 } from "./templates.js";
 
 // Detection

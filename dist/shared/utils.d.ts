@@ -1,5 +1,37 @@
 import fs from "fs-extra";
+import { type SpawnOptions } from "child_process";
 import Joi from "joi";
+/**
+ * Safe execFile - runs a command with arguments without shell interpretation.
+ * Returns { stdout, stderr } or throws on non-zero exit.
+ */
+export declare function safeExecFile(command: string, args: string[], options?: {
+    cwd?: string;
+    timeout?: number;
+}): Promise<{
+    stdout: string;
+    stderr: string;
+}>;
+/**
+ * Safe spawn - runs a command with arguments, returns stdout/stderr.
+ * Does NOT use a shell - immune to injection.
+ */
+export declare function safeSpawn(command: string, args: string[], options?: SpawnOptions & {
+    timeout?: number;
+}): Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+}>;
+/**
+ * Escape HTML special characters to prevent XSS injection.
+ */
+export declare function escapeHtml(str: string): string;
+/**
+ * Sanitize a file path - reject dangerous patterns.
+ * Returns the resolved path if valid, throws if path is suspicious.
+ */
+export declare function sanitizePath(filePath: string): string;
 /**
  * Utility class for common file and system operations
  */
@@ -12,11 +44,11 @@ export declare class Utils {
     /**
      * Read and parse a JSON file safely
      */
-    static readJsonFile<T = any>(filePath: string): Promise<T | null>;
+    static readJsonFile<T = unknown>(filePath: string): Promise<T | null>;
     /**
      * Write JSON to a file with pretty formatting
      */
-    static writeJsonFile(filePath: string, data: any): Promise<boolean>;
+    static writeJsonFile(filePath: string, data: unknown): Promise<boolean>;
     /**
      * Find files matching a pattern using glob
      */
@@ -36,11 +68,15 @@ export declare class Utils {
     /**
      * Debounce function to limit the rate of function calls
      */
-    static debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void;
+    static debounce<T extends (...args: unknown[]) => unknown>(func: T, wait: number): (...args: Parameters<T>) => void;
     /**
      * Sleep utility for delays
      */
     static sleep(ms: number): Promise<void>;
+    /**
+     * Parse a file size string (e.g. "1MB", "500KB", "2GB") to bytes
+     */
+    static parseFileSize(size: string | number): number;
     /**
      * Validate configuration object against schema
      */

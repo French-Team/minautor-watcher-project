@@ -1,6 +1,6 @@
-import { createValidatorRegistry, } from "./validators.js";
+import { PatternValidator, createValidatorRegistry, } from "./validators.js";
 import { createScriptRunner } from "./scripts.js";
-import { createPreventionConfig } from "./config.js";
+import { createPreventionConfig, } from "./config.js";
 import { createChildLogger } from "../shared/logger.js";
 const logger = createChildLogger("prevention");
 /**
@@ -12,7 +12,7 @@ export class PreventionModule {
     scriptRunner;
     config;
     isRunning = false;
-    constructor(config = {}) {
+    constructor(config, dependencies) {
         this.config = {
             enabled: true,
             failOnError: true,
@@ -21,10 +21,19 @@ export class PreventionModule {
             parallelExecution: true,
             ...config,
         };
-        // Initialize components
-        this.configManager = createPreventionConfig(config.configPath);
-        this.validatorRegistry = createValidatorRegistry();
-        this.scriptRunner = createScriptRunner();
+        this.validatorRegistry =
+            dependencies?.validatorRegistry || createValidatorRegistry();
+        this.scriptRunner = dependencies?.scriptRunner || createScriptRunner();
+    }
+    /**
+     * Create and initialize a PreventionModule (async factory)
+     */
+    static async create(config = {}, dependencies) {
+        const module = new PreventionModule(config, dependencies);
+        module.configManager =
+            dependencies?.configManager ||
+                (await createPreventionConfig(config.configPath));
+        return module;
     }
     /**
      * Start the prevention module
@@ -39,7 +48,7 @@ export class PreventionModule {
             // Update component configurations
             await this.updateComponentConfigurations();
             this.isRunning = true;
-            logger.info("Prevention module started successfully");
+            logger.success("Prevention module started successfully");
         }
         catch (error) {
             logger.error("Failed to start prevention module:", error);
@@ -59,7 +68,7 @@ export class PreventionModule {
             // Stop all running scripts
             this.scriptRunner.stopAllScripts();
             this.isRunning = false;
-            logger.info("Prevention module stopped successfully");
+            logger.success("Prevention module stopped successfully");
         }
         catch (error) {
             logger.error("Failed to stop prevention module:", error);
@@ -90,7 +99,7 @@ export class PreventionModule {
         try {
             logger.info(`Processing file: ${filePath}`);
             // Get applicable rules for this file
-            const applicableRules = this.configManager.getRulesForFile(filePath);
+            const applicableRules = await this.configManager.getRulesForFile(filePath);
             if (applicableRules.length === 0) {
                 logger.debug(`No prevention rules applicable for file: ${filePath}`);
                 result.executionTime = Date.now() - startTime;
@@ -216,8 +225,14 @@ export class PreventionModule {
         // Update validator registry with custom validators
         if (config.customValidators) {
             for (const customValidator of config.customValidators) {
-                // This would need to be implemented based on the specific validator type
-                logger.info(`Custom validator ${customValidator.name} registered`);
+                const validator = new PatternValidator({
+                    enabled: true,
+                    rules: {},
+                    customRules: customValidator.config
+                        ?.customRules ?? [],
+                });
+                this.validatorRegistry.register(customValidator.name, validator);
+                logger.success(`Custom validator registered: ${customValidator.name}`);
             }
         }
     }
@@ -242,7 +257,7 @@ export class PreventionModule {
     async reloadConfig() {
         await this.configManager.reloadConfig();
         await this.updateComponentConfigurations();
-        logger.info("Configuration reloaded");
+        logger.success("Configuration reloaded");
     }
     /**
      * Add a custom rule
@@ -273,16 +288,16 @@ export class PreventionModule {
     }
 }
 /**
- * Factory function to create a prevention module
+ * Factory function to create a prevention module (async)
  */
-export function createPreventionModule(config) {
-    return new PreventionModule(config);
+export async function createPreventionModule(config, dependencies) {
+    return PreventionModule.create(config, dependencies);
 }
 /**
  * Quick setup function for common use cases
  */
 export async function setupPrevention(config) {
-    const module = createPreventionModule(config);
+    const module = await createPreventionModule(config);
     await module.start();
     return module;
 }
