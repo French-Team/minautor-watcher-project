@@ -1,6 +1,6 @@
-<div align="center">
-![minautor watcher project logo](./assets/logo-minautor.png)
-</div>
+<p align="center">
+  <img src="./assets/logo-minautor.png" alt="Logo Minautor" width="600" />
+</p>
 # minautor watcher project
 
 Un service de surveillance de code modulaire, automatisé et portable. Détecte les changements en temps réel, prévient les erreurs avant propagation, corrige automatiquement — et **injecte des fichiers de consignes pour guider les agents IA**.
