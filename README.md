@@ -1,5 +1,6 @@
+<div align="center">
 ![minautor watcher project logo](./assets/logo-minautor.png)
-
+</div>
 # minautor watcher project
 
 Un service de surveillance de code modulaire, automatisé et portable. Détecte les changements en temps réel, prévient les erreurs avant propagation, corrige automatiquement — et **injecte des fichiers de consignes pour guider les agents IA**.
@@ -51,7 +52,7 @@ L'objectif n'est pas de remplacer les outils existants, mais de les **orchestrer
 ├────────────┬──────────────┬──────────────────┬───────────┬───────────┤
 │ Detection  │  Prevention  │     Trigger      │ Injection │Environment│
 │            │              │                  │   (V3)    │   (V4)    │
-│ chokidar   │  validateurs  │  correcteurs     │ templates │ sysinfo   │
+│ chokidar   │  validateurs │  correcteurs     │ templates │ sysinfo   │
 │ filters    │  scripts     │  notifieurs      │ detector  │ tools     │
 │ events     │  config      │  rules engine    │ injector  │ banner    │
 │            │  ESLint auto │                  │ ESLint cfg│ doctor    │
@@ -112,17 +113,17 @@ Valide le code dès qu'un fichier est détecté ou modifié.
 
 **Fichiers :** `src/prevention/`
 
-| Classe / Fichier          | Rôle                                                          |
-| ------------------------- | ------------------------------------------------------------- |
-| `PreventionModule`        | Orchestre la validation et l'exécution des scripts            |
-| `BaseValidator`           | Classe abstraite pour les validateurs                         |
+| Classe / Fichier          | Rôle                                                                |
+| ------------------------- | ------------------------------------------------------------------- |
+| `PreventionModule`        | Orchestre la validation et l'exécution des scripts                  |
+| `BaseValidator`           | Classe abstraite pour les validateurs                               |
 | `ESLintValidator`         | Exécute ESLint sur les fichiers JS/TS + injecte la config manquante |
-| `JSONValidator`           | Vérifie la syntaxe JSON                                       |
-| `YAMLValidator`           | Vérifie la syntaxe YAML (optionnel)                           |
-| `PatternValidator`        | Détecte des patterns personnalisés (console.log, TODO, etc.)  |
-| `ValidatorRegistry`       | Enregistre et résout les validateurs par nom                  |
-| `ScriptRunner`            | Exécute des scripts shell (ESLint --fix, Prettier, tsc, etc.) |
-| `PreventionConfigManager` | Gère les règles depuis `config/prevention-rules.json`         |
+| `JSONValidator`           | Vérifie la syntaxe JSON                                             |
+| `YAMLValidator`           | Vérifie la syntaxe YAML (optionnel)                                 |
+| `PatternValidator`        | Détecte des patterns personnalisés (console.log, TODO, etc.)        |
+| `ValidatorRegistry`       | Enregistre et résout les validateurs par nom                        |
+| `ScriptRunner`            | Exécute des scripts shell (ESLint --fix, Prettier, tsc, etc.)       |
+| `PreventionConfigManager` | Gère les règles depuis `config/prevention-rules.json`               |
 
 **Injection ESLint automatique :**
 
@@ -188,11 +189,11 @@ Injecte des fichiers de consignes dans les projets pour guider les agents IA.
 
 **Fichiers :** `src/injection/`
 
-| Classe / Fichier        | Rôle                                                        |
-| ----------------------- | ----------------------------------------------------------- |
-| `checkInjectionStatus`  | Détecte les fichiers de consignes manquants/obsolètes       |
-| `injectFiles`           | Crée/met à jour les fichiers avec backup automatique        |
-| `validateConsignmentFiles` | Intègre la vérification dans le pipeline Prevention      |
+| Classe / Fichier        | Rôle                                                         |
+| ----------------------- | ------------------------------------------------------------ |
+| `checkInjectionStatus`  | Détecte les fichiers de consignes manquants/obsolètes        |
+| `injectFiles`           | Crée/met à jour les fichiers avec backup automatique         |
+| `validateConsignmentFiles` | Intègre la vérification dans le pipeline Prevention       |
 | Templates               | 6 agents : Claude, AGENTS, Cursor, Copilot, Windsurf, ESLint |
 
 **Templates disponibles :**
@@ -253,21 +254,21 @@ Analyse la structure d'un projet et évalue des règles adaptatives.
 | Classe / Fichier     | Rôle                                                             |
 | -------------------- | ---------------------------------------------------------------- |
 | `analyzeProject`     | Détecte langage, package manager, framework, conventions, archi  |
-| `evaluateRules`      | Évalue 12 règles adaptatives contre l'analyse                   |
+| `evaluateRules`      | Évalue 12 règles adaptatives contre l'analyse                    |
 | `getTriggeredRules`  | Retourne uniquement les règles déclenchées                       |
 | `formatEvaluations`  | Formate les résultats en texte lisible                           |
 
 **Ce que détecte `analyzeProject()` :**
 
-| Aspect         | Détection                                      |
-| -------------- | ---------------------------------------------- |
+| Aspect         | Détection                                       |
+| -------------- | ----------------------------------------------- |
 | Langage        | TypeScript, JavaScript, mixed, unknown          |
-| Package manager| npm, yarn, pnpm                                |
-| Test framework | jest, vitest, mocha                            |
-| Architecture   | monorepo, single, library                      |
+| Package manager| npm, yarn, pnpm                                 |
+| Test framework | jest, vitest, mocha                             |
+| Architecture   | monorepo, single, library                       |
 | Framework      | react, vue, angular, svelte, express, next, etc.|
 | Conventions    | indent, quotes, semicolons, line endings        |
-| Consignment    | CLAUDE.md, AGENTS.md, .cursorrules, etc.       |
+| Consignment    | CLAUDE.md, AGENTS.md, .cursorrules, etc.        |
 
 **12 règles adaptatives :**
 
@@ -313,8 +314,8 @@ Détecte l'environnement système, les outils disponibles, et affiche un banner 
 
 | Classe / Fichier     | Rôle                                                             |
 | -------------------- | ---------------------------------------------------------------- |
-| `getSystemInfo`      | OS, CPU, RAM, GPU (registry QWORD), réseau (netsh+ipconfig)     |
-| `detectTools`        | Détecte outils dans le PATH + versions                          |
+| `getSystemInfo`      | OS, CPU, RAM, GPU (registry QWORD), réseau (netsh+ipconfig)      |
+| `detectTools`        | Détecte outils dans le PATH + versions                           |
 | `detectDevEnvironment` | IDE (VS Code, JetBrains, Sublime, Vim), shell, Docker, WSL, CI |
 | `generateEnvReport`  | Agrège toutes les infos en un rapport                            |
 | `printBanner`        | Affiche le banner complet (détails)                              |
@@ -322,12 +323,12 @@ Détecte l'environnement système, les outils disponibles, et affiche un banner 
 
 **Ce que détecte `getSystemInfo()` :**
 
-| Donnée      | Source                                      |
-| ----------- | ------------------------------------------- |
+| Donnée      | Source                                       |
+| ----------- | -------------------------------------------- |
 | Platform    | `os.platform()` — win32 / linux / darwin     |
 | CPU         | `os.cpus()` — model, cores                   |
 | RAM         | `os.totalmem()` / `os.freemem()`             |
-| GPU VRAM    | Registry QWORD `qwMemorySize` (accurate)    |
+| GPU VRAM    | Registry QWORD `qwMemorySize` (accurate)     |
 | Réseau      | `netsh` + `ipconfig` — interfaces, IP        |
 | Node/npm    | `process.version` + `npm --version`          |
 | Date/année  | `new Date().getFullYear()`                   |
@@ -360,26 +361,26 @@ printCompactBanner(report); // Une ligne
 
 Le watcher intègre un ensemble de protections issues de V2 :
 
-| Fonctionnalité                | Description                                                    |
-| ----------------------------- | -------------------------------------------------------------- |
-| `safeSpawn()`                 | Exécution de commandes shell sans injection de paths           |
-| `safeExecFile()`              | Exécution d'exécutables avec timeout                           |
-| `sanitizePath()`              | Nettoyage des paths avant utilisation                          |
-| `escapeHtml()`                | Échappement HTML pour les notifications                        |
-| `withFileLock()`              | Verrouillage par fichier pour éviter les concurrences          |
-| `CircuitBreaker`              | Protection contre les erreurs répétées (5 échecs → OPEN)       |
-| `retryWithBackoff()`          | Retry avec backoff exponentiel (3 tentatives)                  |
-| `writeFileWithBackup()`       | Écriture avec sauvegarde `.bak` automatique                    |
-| `restoreFromBackup()`         | Restauration depuis le backup                                  |
-| Script whitelist              | Seuls `npx eslint`, `npx prettier`, `npm run`, `node` autorisés|
-| Batch ESLint/Prettier         | 50 fichiers par invocation pour la performance                 |
-| LRU eviction                  | File d'attente bornée (1000 max) avec éviction                 |
-| Health check HTTP             | `GET /health`, `/ready`, `/metrics` (Prometheus)               |
-| Graceful drain                | Arrêt propre avec timeout configurable                         |
-| Logging structuré JSON        | `LOG_FORMAT=json` pour la production                           |
+| Fonctionnalité                | Description                                                            |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| `safeSpawn()`                 | Exécution de commandes shell sans injection de paths                   |
+| `safeExecFile()`              | Exécution d'exécutables avec timeout                                   |
+| `sanitizePath()`              | Nettoyage des paths avant utilisation                                  |
+| `escapeHtml()`                | Échappement HTML pour les notifications                                |
+| `withFileLock()`              | Verrouillage par fichier pour éviter les concurrences                  |
+| `CircuitBreaker`              | Protection contre les erreurs répétées (5 échecs → OPEN)               |
+| `retryWithBackoff()`          | Retry avec backoff exponentiel (3 tentatives)                          |
+| `writeFileWithBackup()`       | Écriture avec sauvegarde `.bak` automatique                            |
+| `restoreFromBackup()`         | Restauration depuis le backup                                          |
+| Script whitelist              | Seuls `npx eslint`, `npx prettier`, `npm run`, `node` autorisés        |
+| Batch ESLint/Prettier         | 50 fichiers par invocation pour la performance                         |
+| LRU eviction                  | File d'attente bornée (1000 max) avec éviction                         |
+| Health check HTTP             | `GET /health`, `/ready`, `/metrics` (Prometheus)                       |
+| Graceful drain                | Arrêt propre avec timeout configurable                                 |
+| Logging structuré JSON        | `LOG_FORMAT=json` pour la production                                   |
 | Signal handlers               | `SIGINT`/`SIGTERM` (shutdown), `SIGUSR1` (reload), `SIGUSR2` (restart) |
-| Injection auto ESLint         | Config `.eslintrc.json` injectée si manquante                  |
-| Skip notifications            | Slack/Email skip si credentials manquants (warn, pas error)    |
+| Injection auto ESLint         | Config `.eslintrc.json` injectée si manquante                          |
+| Skip notifications            | Slack/Email skip si credentials manquants (warn, pas error)            |
 
 ---
 
