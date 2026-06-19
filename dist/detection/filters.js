@@ -1,4 +1,4 @@
-import fs from "fs-extra";
+import { Utils } from "../shared/utils.js";
 import { createChildLogger } from "../shared/logger.js";
 const logger = createChildLogger("detection-filters");
 /**
@@ -95,7 +95,7 @@ export class FileFilter {
      */
     async filterByFileSize(event) {
         try {
-            const stats = await fs.stat(event.filePath);
+            const stats = await Utils.statCached(event.filePath);
             const fileSize = stats.size;
             if (this.criteria.maxFileSize && fileSize > this.criteria.maxFileSize) {
                 return {
@@ -126,7 +126,7 @@ export class FileFilter {
      */
     async filterByModificationTime(event) {
         try {
-            const stats = await fs.stat(event.filePath);
+            const stats = await Utils.statCached(event.filePath);
             const now = Date.now();
             const modifiedTime = stats.mtime.getTime();
             const timeDiff = now - modifiedTime;

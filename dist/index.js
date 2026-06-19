@@ -1,11 +1,18 @@
 import dotenv from "dotenv";
+import fs from "fs-extra";
+import path from "path";
 import { pathToFileURL } from "url";
 import { createDetectionModule } from "./detection/index.js";
 import { EventUtils } from "./detection/events.js";
 import { createPreventionModule, } from "./prevention/index.js";
 import { createTriggerModule } from "./trigger/index.js";
-import logger from "./shared/logger.js";
+import { buildFixReport, writeFixReport, cleanFixReports, ActiveWarningsManager } from "./fallback/index.js";
+import logger, { clearLogFiles, writeLogHeader, writeReport } from "./shared/logger.js";
+import { Utils } from "./shared/utils.js";
 import { createHealthHttpServer } from "./server/http.js";
+import { execSync } from "child_process";
+import { createResourceMonitor } from "./monitor/index.js";
+import { ChainOrchestrator } from "./processor/index.js";
 export { CURRENT_YEAR, WATCHER_VERSION, getSystemInfo, detectTools, detectDevEnvironment, generateEnvReport, printBanner, printCompactBanner, } from "./environment/index.js";
 // Load environment variables
 dotenv.config({ path: ".env.local" });
@@ -17,6 +24,9 @@ export class WatcherService {
     preventionModule;
     triggerModule;
     httpServer = null;
+    resourceMonitor = null;
+    chainOrchestrator = null;
+    activeWarnings;
     config;
     isRunning = false;
     draining = false;
@@ -30,6 +40,12 @@ export class WatcherService {
         startTime: null,
         lastFileTime: null,
     };
+    activeWarningsInitialized = false;
+    scanSummary = { successCount: 0, failedCount: 0, warningCount: 0, errorRules: new Map() };
+    scanFileCount = 0;
+    validationResult = null;
+    reportDebounceTimer = null;
+    REPORT_IDLE_MS = 20_000;
     constructor(config = {}) {
         this.config = {
             watchDir: process.env.WATCH_DIR || process.cwd(),
@@ -38,6 +54,7 @@ export class WatcherService {
             port: process.env.PORT ? parseInt(process.env.PORT) : undefined,
             ...config,
         };
+        this.activeWarnings = new ActiveWarningsManager();
     }
     getMetrics() {
         return { ...this.metrics };
@@ -52,21 +69,103 @@ export class WatcherService {
             lastFileTime: null,
         };
     }
+    /**
+     * Build and write the final report file.
+     * Called on idle detection and on shutdown.
+     */
+    async writeReportFile() {
+        const httpPort = this.httpServer && typeof this.httpServer.getPort === "function"
+            ? this.httpServer.getPort()
+            : undefined;
+        const errorRulesObj = {};
+        for (const [rule, count] of this.scanSummary.errorRules) {
+            errorRulesObj[rule] = count;
+        }
+        const fixReportDir = this.config.watchDir ? path.join(this.config.watchDir, ".fix-reports") : "";
+        let actualFixReportCount = 0;
+        if (fixReportDir) {
+            try {
+                const files = await fs.readdir(fixReportDir);
+                actualFixReportCount = files.filter((f) => f.startsWith("fix-") && f.endsWith(".md")).length;
+            }
+            catch {
+                // directory doesn't exist
+            }
+        }
+        await writeReport({
+            startTime: this.metrics.startTime?.toISOString() || new Date().toISOString(),
+            endTime: new Date().toISOString(),
+            targetDir: this.config.watchDir,
+            fileCount: this.scanFileCount,
+            filesProcessed: this.metrics.filesProcessed,
+            filesCorrected: this.metrics.filesCorrected,
+            filesFailed: this.metrics.filesFailed,
+            warningCount: this.scanSummary.warningCount,
+            fixReportCount: actualFixReportCount,
+            warningFileCount: this.activeWarnings.fileCount(),
+            errorRules: errorRulesObj,
+            httpPort,
+            validation: this.validationResult || undefined,
+            activeWarningsCount: this.activeWarnings.totalCount(),
+        });
+    }
+    /**
+     * Debounced report update: resets a 20s timer on each file event.
+     * The report is only written once the pipeline has been idle for 20s.
+     */
+    scheduleReportUpdate() {
+        if (this.reportDebounceTimer) {
+            clearTimeout(this.reportDebounceTimer);
+        }
+        this.reportDebounceTimer = setTimeout(() => {
+            this.reportDebounceTimer = null;
+            this.writeReportFile().catch(() => { });
+        }, this.REPORT_IDLE_MS);
+    }
+    /**
+     * Validate the target project directory for required tooling
+     */
+    async validateTargetProject(dir) {
+        const dirExists = await Utils.pathExists(dir);
+        const hasPackageJson = await Utils.pathExists(path.join(dir, "package.json"));
+        const hasNodeModules = await Utils.pathExists(path.join(dir, "node_modules"));
+        let eslintVersion = null;
+        try {
+            eslintVersion = execSync("npx eslint --version", { cwd: dir, encoding: "utf-8", timeout: 5000 }).trim();
+        }
+        catch { /* not available */ }
+        let prettierVersion = null;
+        try {
+            prettierVersion = execSync("npx prettier --version", { cwd: dir, encoding: "utf-8", timeout: 5000 }).trim();
+        }
+        catch { /* not available */ }
+        return { dirExists, hasPackageJson, hasNodeModules, eslintVersion, prettierVersion };
+    }
     getPreventionModule() {
         return this.preventionModule;
     }
     getTriggerModule() {
         return this.triggerModule;
     }
+    getResourceMonitor() {
+        return this.resourceMonitor;
+    }
     /**
      * Initialize all modules
      */
     async initialize() {
+        // Clear winston log files and write a fresh header for this run.
+        // This prevents accumulation across runs and makes each run's output
+        // easy to identify (no more confusing "same errors" from previous runs).
+        await clearLogFiles();
+        await writeLogHeader({ targetDir: this.config.watchDir });
         logger.info("Initializing Watcher Service...");
         try {
             // Initialize detection module
             this.detectionModule = createDetectionModule({
                 watchDir: this.config.watchDir,
+                processExisting: this.config.processExisting,
+                processExistingDelay: this.config.processExistingDelay,
             });
             // Initialize prevention module (if enabled)
             if (this.config.enablePrevention !== false) {
@@ -82,7 +181,68 @@ export class WatcherService {
             else {
                 logger.info("Trigger module disabled via configuration");
             }
-            // Set up module communication
+            // Initialize chain orchestrator (N sequential chains) — MUST be before setupModuleCommunication
+            const chainCount = parseInt(process.env.CHAIN_COUNT || "5");
+            this.chainOrchestrator = new ChainOrchestrator(this.preventionModule, this.triggerModule ?? null, chainCount, (result) => {
+                this.metrics.filesProcessed++;
+                this.metrics.lastFileTime = new Date();
+                this.metrics.totalProcessingTime += result.executionTime;
+                // Schedule a report update after 20s of inactivity
+                this.scheduleReportUpdate();
+                if (result.success) {
+                    this.metrics.filesCorrected++;
+                    this.scanSummary.successCount++;
+                    if (result.preventionResult?.warnings?.length) {
+                        this.scanSummary.warningCount += result.preventionResult.warnings.length;
+                        // Persist warnings to active-warnings so agents see them (blue logs via addWarnings)
+                        const warningEntries = result.preventionResult.warnings.map((w) => ({
+                            filePath: result.filePath,
+                            rule: w.rule,
+                            message: w.message,
+                            severity: w.severity || "warning",
+                        }));
+                        this.activeWarnings.addWarnings(result.filePath, warningEntries);
+                        for (const w of result.preventionResult.warnings) {
+                            const count = this.scanSummary.errorRules.get(w.rule) || 0;
+                            this.scanSummary.errorRules.set(w.rule, count + 1);
+                        }
+                        // Also write a fix report so agents in the target project can see the warnings
+                        if (this.config.watchDir) {
+                            const report = buildFixReport(result.filePath, result.preventionResult.warnings, this.config.watchDir);
+                            writeFixReport(report).catch((err) => logger.error("Failed to write fix report (warnings):", err));
+                        }
+                    }
+                    else {
+                        // Clean SUCCESS — no warnings, no errors
+                        this.activeWarnings.resolveWarnings(result.filePath);
+                    }
+                }
+                else if (this.config.watchDir) {
+                    this.metrics.filesFailed++;
+                    this.scanSummary.failedCount++;
+                    const projectDir = this.config.watchDir;
+                    const errors = result.preventionResult.errors.map((e) => ({
+                        rule: e.rule,
+                        message: e.message,
+                        severity: e.severity,
+                    }));
+                    if (errors.length > 0) {
+                        for (const e of errors) {
+                            const count = this.scanSummary.errorRules.get(e.rule) || 0;
+                            this.scanSummary.errorRules.set(e.rule, count + 1);
+                        }
+                        this.activeWarnings.addWarnings(result.filePath, errors.map((e) => ({
+                            filePath: result.filePath,
+                            rule: e.rule,
+                            message: e.message,
+                            severity: e.severity,
+                        })));
+                        const report = buildFixReport(result.filePath, errors, projectDir);
+                        writeFixReport(report).catch((err) => logger.error("Failed to write fix report:", err));
+                    }
+                }
+            });
+            // Set up module communication (requires chainOrchestrator to be initialized)
             this.setupModuleCommunication();
             // Start HTTP health server if port configured
             if (this.config.port) {
@@ -93,6 +253,31 @@ export class WatcherService {
                 if (this.httpServer) {
                     await this.httpServer.start();
                 }
+            }
+            // Start resource monitor
+            this.resourceMonitor = createResourceMonitor();
+            // Load active warnings from disk
+            await this.activeWarnings.init();
+            // Clean stale fix reports from target project
+            if (this.config.watchDir) {
+                await cleanFixReports(this.config.watchDir);
+            }
+            // Validate target project
+            if (this.config.watchDir) {
+                const report = await this.validateTargetProject(this.config.watchDir);
+                this.validationResult = {
+                    eslint: report.eslintVersion,
+                    prettier: report.prettierVersion,
+                    hasPackageJson: report.hasPackageJson,
+                    hasNodeModules: report.hasNodeModules,
+                };
+                const check = (ok) => ok ? "✓" : "✗";
+                logger.info(`Target project validation:\n` +
+                    `  ${check(report.dirExists)} Directory exists\n` +
+                    `  ${check(report.hasPackageJson)} package.json\n` +
+                    `  ${check(report.hasNodeModules)} node_modules\n` +
+                    `  ${check(report.eslintVersion !== null)} ESLint: ${report.eslintVersion ?? "not found"}\n` +
+                    `  ${check(report.prettierVersion !== null)} Prettier: ${report.prettierVersion ?? "not found"}`);
             }
             logger.success("Watcher Service initialized successfully");
         }
@@ -111,6 +296,7 @@ export class WatcherService {
             throw new Error("Watcher Service not initialized. Call initialize() first.");
         }
         logger.info("Starting Watcher Service...");
+        this.metrics.startTime = new Date();
         try {
             // Start all modules
             await Promise.all([
@@ -118,8 +304,42 @@ export class WatcherService {
                 this.preventionModule.start(),
                 this.triggerModule.start(),
             ]);
+            // Wait for initial scan to complete, then write log header with actual file count
+            const scanResult = await this.detectionModule.waitForScanComplete();
+            this.scanFileCount = scanResult.fileCount;
+            await writeLogHeader({
+                targetDir: this.config.watchDir,
+                fileCount: scanResult.fileCount,
+            });
+            // Schedule first report — will fire after 20s idle once all queued files are processed
+            this.scheduleReportUpdate();
             logger.success("Watcher Service started successfully");
             this.isRunning = true;
+            // Start resource monitoring
+            this.resourceMonitor?.start();
+            // Register signal handlers for graceful shutdown
+            const shutdown = async (signal) => {
+                logger.info(`Received ${signal}, shutting down gracefully...`);
+                await this.stop();
+                process.exit(0);
+            };
+            process.on("SIGINT", () => shutdown("SIGINT"));
+            process.on("SIGTERM", () => shutdown("SIGTERM"));
+            // USR1 = reload config, USR2 = graceful restart (Unix only)
+            if (typeof process.on === "function") {
+                process.on("SIGUSR1", () => {
+                    logger.info("Received SIGUSR1, reloading configuration...");
+                    this.reloadConfig().catch((err) => {
+                        logger.error("Failed to reload config:", err);
+                    });
+                });
+                process.on("SIGUSR2", async () => {
+                    logger.info("Received SIGUSR2, performing graceful restart...");
+                    await this.stop();
+                    await this.initialize();
+                    await this.start();
+                });
+            }
         }
         catch (error) {
             logger.error("Failed to start Watcher Service:", error);
@@ -131,7 +351,15 @@ export class WatcherService {
      */
     async stop() {
         logger.info("Stopping Watcher Service...");
+        // Cancel pending debounced report and write immediately
+        if (this.reportDebounceTimer) {
+            clearTimeout(this.reportDebounceTimer);
+            this.reportDebounceTimer = null;
+        }
+        await this.writeReportFile().catch(() => { });
         try {
+            // Stop resource monitor first
+            this.resourceMonitor?.stop();
             // Stop HTTP server first
             if (this.httpServer) {
                 await this.httpServer.stop();
@@ -192,129 +420,43 @@ export class WatcherService {
     }
     /**
      * Set up communication between modules
+     * All file events are routed to the chain orchestrator for sequential processing.
      */
     setupModuleCommunication() {
-        if (!this.detectionModule) {
+        if (!this.detectionModule || !this.chainOrchestrator) {
             return;
         }
-        // Set up event forwarding from detection to prevention and trigger
-        this.detectionModule.eventBus.on("fileDetected", EventUtils.wrapAsyncHandler(async (event) => {
+        const enqueue = async (event) => {
             if (this.draining) {
                 logger.debug(`Ignoring file event during drain: ${event.file.filePath}`);
                 return;
             }
             this.beginTask();
-            const startTime = Date.now();
             try {
-                this.metrics.filesProcessed++;
-                this.metrics.lastFileTime = new Date();
-                // Process file through prevention module (if available)
-                let preventionResult = {
-                    filePath: event.file.filePath,
-                    success: true,
-                    errors: [],
-                    warnings: [],
-                    executionTime: 0,
-                };
-                if (this.preventionModule) {
-                    preventionResult = await this.preventionModule.processFile(event.file.filePath);
-                }
-                // Trigger corrections (if available)
-                if (this.triggerModule) {
-                    if (preventionResult.success ||
-                        preventionResult.warnings.length > 0) {
-                        await this.triggerModule.processEvent({
-                            filePath: event.file.filePath,
-                            eventType: "fileDetected",
-                            metadata: { preventionResult },
-                            timestamp: new Date(),
-                        });
-                    }
-                    // If prevention fails, send notification
-                    if (!preventionResult.success) {
-                        this.metrics.filesFailed++;
-                        await this.triggerModule.processEvent({
-                            filePath: event.file.filePath,
-                            eventType: "preventionFailed",
-                            error: {
-                                message: `Prevention failed: ${preventionResult.errors.length} errors`,
-                                preventionResult,
-                            },
-                            timestamp: new Date(),
-                        });
-                    }
-                    else {
-                        this.metrics.filesCorrected++;
-                    }
-                }
-                this.metrics.totalProcessingTime += Date.now() - startTime;
+                this.chainOrchestrator.enqueue(event.file.filePath);
             }
             catch (error) {
                 this.metrics.filesFailed++;
-                logger.error("Error in detection event handling:", error);
+                logger.error("Error enqueueing file:", error);
             }
             finally {
+                // endTask called after chain completes (via onComplete callback)
+                // For enqueue we end immediately — chain processes asynchronously
                 this.endTask();
             }
-        }));
-        this.detectionModule.eventBus.on("fileModified", EventUtils.wrapAsyncHandler(async (event) => {
-            if (this.draining) {
-                return;
-            }
-            this.beginTask();
-            const startTime = Date.now();
-            try {
-                this.metrics.filesProcessed++;
-                this.metrics.lastFileTime = new Date();
-                // Process file through prevention module (if available)
-                let preventionResult = {
-                    filePath: event.file.filePath,
-                    success: true,
-                    errors: [],
-                    warnings: [],
-                    executionTime: 0,
-                };
-                if (this.preventionModule) {
-                    preventionResult = await this.preventionModule.processFile(event.file.filePath);
-                }
-                // Trigger corrections (if available)
-                if (this.triggerModule) {
-                    await this.triggerModule.processEvent({
-                        filePath: event.file.filePath,
-                        eventType: "fileModified",
-                        metadata: { preventionResult },
-                        timestamp: new Date(),
-                    });
-                }
-                if (preventionResult.success) {
-                    this.metrics.filesCorrected++;
-                }
-                else {
-                    this.metrics.filesFailed++;
-                }
-                this.metrics.totalProcessingTime += Date.now() - startTime;
-            }
-            catch (error) {
-                this.metrics.filesFailed++;
-                logger.error("Error in file modification handling:", error);
-            }
-            finally {
-                this.endTask();
-            }
-        }));
+        };
+        this.detectionModule.eventBus.on("fileDetected", EventUtils.wrapAsyncHandler(enqueue));
+        this.detectionModule.eventBus.on("fileModified", EventUtils.wrapAsyncHandler(enqueue));
         this.detectionModule.eventBus.on("fileDeleted", EventUtils.wrapAsyncHandler(async (event) => {
-            if (this.draining) {
+            if (this.draining)
                 return;
-            }
             this.beginTask();
             try {
-                if (this.triggerModule) {
-                    await this.triggerModule.processEvent({
-                        filePath: event.file.filePath,
-                        eventType: "fileDeleted",
-                        timestamp: new Date(),
-                    });
-                }
+                this.triggerModule?.processEvent({
+                    filePath: event.file.filePath,
+                    eventType: "fileDeleted",
+                    timestamp: new Date(),
+                });
             }
             catch (error) {
                 logger.error("Error in file deletion handling:", error);
@@ -329,6 +471,7 @@ export class WatcherService {
      * Get service status
      */
     getStatus() {
+        const snapshot = this.resourceMonitor?.getSnapshot();
         return {
             initialized: Boolean(this.detectionModule && this.preventionModule && this.triggerModule),
             running: this.isRunning,
@@ -338,6 +481,21 @@ export class WatcherService {
                 prevention: this.preventionModule?.getStatus(),
                 trigger: this.triggerModule?.getStatus(),
             },
+            processor: this.chainOrchestrator
+                ? {
+                    chains: this.chainOrchestrator.getChainStatus(),
+                    queued: this.chainOrchestrator.getTotalQueued(),
+                    busy: this.chainOrchestrator.getBusyChains(),
+                }
+                : undefined,
+            resources: snapshot
+                ? {
+                    cpu: `${snapshot.cpu.usagePercent}%`,
+                    memory: `${snapshot.memory.usedMB}/${snapshot.memory.totalMB} MB (${snapshot.memory.usagePercent}%)`,
+                    heap: `${snapshot.heap.usedMB} MB`,
+                    loadAvg: snapshot.loadAvg[0].toFixed(2),
+                }
+                : undefined,
         };
     }
     /**
@@ -346,6 +504,7 @@ export class WatcherService {
     async reloadConfig() {
         logger.info("Reloading configuration...");
         try {
+            Utils.clearStatCache();
             await Promise.all([
                 this.detectionModule?.reloadConfig(),
                 this.preventionModule?.reloadConfig(),

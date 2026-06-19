@@ -43,7 +43,7 @@ export const preventionConfigSchema = Joi.object({
   }).default({
     failOnError: true,
     failOnWarning: false,
-    maxExecutionTime: 30000,
+    maxExecutionTime: 10000,
     parallelExecution: true,
   }),
   customValidators: Joi.array()
@@ -107,7 +107,7 @@ export const triggerConfigSchema = Joi.object({
   autoCorrect: Joi.object({
     enabled: Joi.boolean().default(false),
     maxFileSize: Joi.alternatives().try(Joi.string(), Joi.number()).optional(),
-    timeout: Joi.number().default(30000),
+    timeout: Joi.number().default(15000),
     retryAttempts: Joi.number().default(3),
   }).optional(),
   notifications: Joi.object({

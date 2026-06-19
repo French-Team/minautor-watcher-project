@@ -32,7 +32,7 @@ Basé sur les documents indexés, le Watcher doit évoluer en un service intelli
   - Configuration flexible pour règles personnalisées par projet.
 - **Architecture de code recommandée** :
   - **Modulaire** : Séparer en modules (surveillance, prévention, correction, notifications).
-  - **Technologies** : Node.js avec les dépendances listées (Chokidar pour watching, ESLint/Prettier pour code quality, Winston pour logs).
+  - **Technologies** : Node.js avec les dépendances listées (fs.watch pour watching, ESLint/Prettier pour code quality, Winston pour logs).
   - **Sécurité et robustesse** : Utiliser Joi pour validation, Helmet pour sécurité, Jest pour tests.
   - **CLI intégrée** : Commander.js pour une interface utilisateur simple.
   - **Workflow** : Démarrer par la configuration, puis surveillance continue, avec logs structurés pour audit.
@@ -60,7 +60,7 @@ Responsabilité : Détecter les changements en temps réel dans les fichiers sur
 
 - **Point d'entrée** : `src/detection/index.ts` - Orchestre la surveillance et expose les APIs pour les autres secteurs.
 - **Fichiers composants** :
-  - `src/detection/watcher.ts` : Initialise Chokidar et gère les événements de fichiers (ajout, modification, suppression).
+  - `src/detection/watcher.ts` : Initialise fs.watch natif et gere les evenements de fichiers (ajout, modification, suppression).
   - `src/detection/filters.ts` : Applique les filtres par type de fichier (ex. : HTML, CSS, TSX) et exclusions (ex. : dossier Watcher).
   - `src/detection/events.ts` : Définit et émet des événements personnalisés (ex. : `fileChanged`) pour notifier les autres secteurs.
 - **Indépendance** : Peut fonctionner seul pour la surveillance basique ; teste avec Jest pour les événements.
@@ -99,7 +99,7 @@ watcher-service/
 ├── src/
 │   ├── detection/          # Secteur Détection
 │   │   ├── index.ts        # Point d'entrée
-│   │   ├── watcher.ts      # Surveillance avec Chokidar
+│   │   ├── watcher.ts      # Surveillance avec fs.watch
 │   │   ├── filters.ts      # Filtres par type
 │   │   └── events.ts       # Événements personnalisés
 │   ├── prevention/         # Secteur Prévention
@@ -176,7 +176,7 @@ Voici les erreurs courantes que le Watcher doit détecter et corriger automatiqu
 
 ### Intégration dans les Secteurs
 
-- **Secteur Détection** : Utilise Chokidar pour surveiller les fichiers et déclencher des scans ESLint à chaque changement.
+- **Secteur Detection** : Utilise fs.watch natif pour surveiller les fichiers et déclencher des scans ESLint à chaque changement.
 - **Secteur Prévention** : Valide le code avec ESLint avant les commits ou changements majeurs, bloquant les erreurs si nécessaire.
 - **Secteur Déclencheur** : Applique les corrections automatiques via scripts (ex. : `eslint --fix`) et restaure les fichiers sans interruption.
 - **Workflow** : Dès qu'une erreur est détectée (ex. : sauvegarde d'un fichier), le Watcher lance un script de correction en arrière-plan, notifie si l'erreur persiste, et logue l'action.
@@ -200,7 +200,7 @@ Cette gestion des erreurs sera implémentée dans les fichiers composants des se
 - **Utiliser le package.json fourni** : Copier l'exemple de [watcher-dependencies.md](#) dans `package.json`.
   - Commande : `npm install` ou `yarn install`.
 - **Dépendances clés à installer** :
-  - Runtime : Chokidar, dotenv, @slack/web-api, nodemailer, commander, winston, jest, fs-extra, joi, helmet, glob.
+  - Runtime : dotenv, @slack/web-api, nodemailer, commander, winston, jest, fs-extra, joi, helmet, glob.
   - Dev : ESLint, Prettier, eslint-config-prettier, eslint-plugin-prettier.
 - **Vérification** : S'assurer que toutes les dépendances sont open source et gratuites. Référence : [watcher-dependencies.md - Liste Complète](#).
 - **Conseil** : Utiliser `npm audit` pour vérifier les vulnérabilités et mettre à jour si nécessaire.
@@ -219,12 +219,12 @@ Cette gestion des erreurs sera implémentée dans les fichiers composants des se
 ### Étape 4 : Développement et Intégration du Code
 
 - **Modules principaux** :
-  - **Watcher.js** : Utiliser Chokidar pour surveiller les fichiers, exclure le dossier Watcher.
+  - **Watcher.js** : Utiliser fs.watch natif pour surveiller les fichiers, exclure le dossier Watcher.
   - **Prevention.js** : Intégrer ESLint pour vérifications.
   - **Correction.js** : Appliquer Prettier ou scripts personnalisés pour corrections automatiques.
   - **Notifications.js** : Envoyer des alertes via @slack/web-api ou nodemailer si échec.
   - **CLI.js** : Utiliser Commander.js pour une interface (ex. : `node cli.js start --dir ./project`).
-- **Orchestration** : Créer un fichier `index.js` qui orchestre tout : charge dotenv, initialise Winston, démarre Chokidar, et gère les événements.
+- **Orchestration** : Créer un fichier `index.js` qui orchestre tout : charge dotenv, initialise Winston, démarre fs.watch, et gère les événements.
 - **Gestion des erreurs** : Utiliser fs-extra pour manipulations sûres et Joi pour validation.
 - **Référence** : S'inspirer de [watcher-capabilities.md - Systèmes de Déclenchement](#) pour les règles conditionnelles.
 

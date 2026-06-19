@@ -70,5 +70,5 @@ Le watcher cible les fichiers critiques pour le développement web et autres pro
 ## Prochaines étapes
 
 - Définir l'architecture technique (langage : Node.js, Python, etc.).
-- Implémenter les modules de base (surveillance via file watchers, intégration avec outils comme Chokidar).
+- Implémenter les modules de base (surveillance via file watchers, intégration avec fs.watch natif).
 - Tester dans un environnement de développement pour valider la portabilité et l'efficacité.

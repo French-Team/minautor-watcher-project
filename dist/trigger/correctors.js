@@ -8,9 +8,11 @@ const logger = createChildLogger("trigger-correctors");
  * Prevents concurrent writes from ESLint and Prettier on the same file.
  */
 const fileLocks = new Map();
+const LOCK_TTL_MS = 30_000;
 /**
  * Execute a function while holding a file lock.
  * Serializes writes to the same file to prevent race conditions.
+ * Auto-releases after 30s if holder crashes.
  */
 async function withFileLock(filePath, fn) {
     // Wait for any pending lock on this file
@@ -24,10 +26,19 @@ async function withFileLock(filePath, fn) {
         release = resolve;
     });
     fileLocks.set(filePath, current);
+    // Safety TTL: auto-release if holder hangs
+    const timer = setTimeout(() => {
+        if (fileLocks.get(filePath) === current) {
+            release();
+            fileLocks.delete(filePath);
+        }
+    }, LOCK_TTL_MS);
+    timer.unref();
     try {
         return await fn();
     }
     finally {
+        clearTimeout(timer);
         release();
         // Clean up if we're still the holder
         if (fileLocks.get(filePath) === current) {
@@ -423,7 +434,7 @@ export class ESLintFixCorrector extends BaseCorrector {
                     "eslint",
                     "--fix",
                     filePath,
-                ]);
+                ], { cwd: path.dirname(filePath) });
                 result.corrected = !stderr || !stderr.includes("error");
                 result.success = true;
                 if (stderr) {
@@ -467,11 +478,12 @@ export class ESLintFixCorrector extends BaseCorrector {
             const BATCH_SIZE = 50;
             for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
                 const batch = filePaths.slice(i, i + BATCH_SIZE);
+                const batchCwd = path.dirname(batch[0]);
                 const { stderr } = await safeSpawn("npx", [
                     "eslint",
                     "--fix",
                     ...batch,
-                ]);
+                ], { cwd: batchCwd });
                 const hasError = stderr && stderr.includes("error");
                 for (const filePath of batch) {
                     const result = {
@@ -550,7 +562,7 @@ export class PrettierFormatCorrector extends BaseCorrector {
                     "prettier",
                     "--write",
                     filePath,
-                ]);
+                ], { cwd: path.dirname(filePath) });
                 result.corrected = true;
                 result.success = true;
                 if (stderr) {
@@ -592,7 +604,8 @@ export class PrettierFormatCorrector extends BaseCorrector {
             const BATCH_SIZE = 50;
             for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
                 const batch = filePaths.slice(i, i + BATCH_SIZE);
-                await safeSpawn("npx", ["prettier", "--write", ...batch]);
+                const batchCwd = path.dirname(batch[0]);
+                await safeSpawn("npx", ["prettier", "--write", ...batch], { cwd: batchCwd });
                 for (const filePath of batch) {
                     const result = {
                         success: true,
@@ -669,32 +682,39 @@ export class CorrectorRegistry {
             .sort((a, b) => b.getPriority() - a.getPriority()); // Sort by priority (highest first)
     }
     /**
-     * Apply corrections to a file
+     * Apply corrections to a file (V5.6: parallel execution)
      */
     async applyCorrections(filePath, error, dryRun = false) {
         const applicableCorrectors = this.getApplicableCorrectors(filePath, error);
-        const results = [];
         logger.info(`Applying ${applicableCorrectors.length} correctors to ${filePath}${dryRun ? " (dry-run)" : ""}`);
-        for (const corrector of applicableCorrectors) {
+        const results = await Promise.allSettled(applicableCorrectors.map(async (corrector) => {
             try {
                 const result = await corrector.applyCorrection(filePath, error, dryRun);
-                results.push(result);
                 if (result.corrected) {
                     logger.info(`Corrector ${corrector.getName()} successfully corrected ${filePath}`);
                 }
+                return result;
             }
             catch (error) {
                 logger.error(`Corrector ${corrector.getName()} failed for ${filePath}:`, error);
-                results.push({
+                return {
                     success: false,
                     corrected: false,
                     changes: [],
                     executionTime: 0,
                     error: error instanceof Error ? error : new Error(String(error)),
-                });
+                };
             }
-        }
-        return results;
+        }));
+        return results.map((result) => result.status === "fulfilled"
+            ? result.value
+            : {
+                success: false,
+                corrected: false,
+                changes: [],
+                executionTime: 0,
+                error: result.reason,
+            });
     }
     /**
      * Apply corrections to multiple files in batch

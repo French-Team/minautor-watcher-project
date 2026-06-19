@@ -250,6 +250,38 @@ export class DetectionEventBus extends EventEmitter {
 export const eventBus = new DetectionEventBus();
 
 /**
+ * Tracked listeners for cleanup (V5.9)
+ */
+const trackedListeners = new Map<string, Set<() => void>>();
+
+/**
+ * Register a listener with automatic cleanup tracking
+ */
+export function trackListener(
+  event: DetectionEvent,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  listener: (...args: any[]) => void
+): void {
+  if (!trackedListeners.has(event)) {
+    trackedListeners.set(event, new Set());
+  }
+  trackedListeners.get(event)!.add(listener as () => void);
+  eventBus.on(event, listener);
+}
+
+/**
+ * Remove all tracked listeners (call on stop/reload)
+ */
+export function cleanupAllListeners(): void {
+  for (const [event, listeners] of trackedListeners) {
+    for (const listener of listeners) {
+      eventBus.removeListener(event, listener);
+    }
+  }
+  trackedListeners.clear();
+}
+
+/**
  * Utility functions for event handling
  */
 export class EventUtils {
@@ -318,9 +350,9 @@ export function OnEvent(event: DetectionEvent) {
   ) {
     const method = descriptor.value;
 
-    // Register the method as an event listener
+    // Register the method as a tracked event listener (V5.9)
     process.nextTick(() => {
-      eventBus.on(event, method.bind(target));
+      trackListener(event, method.bind(target));
     });
 
     return descriptor;

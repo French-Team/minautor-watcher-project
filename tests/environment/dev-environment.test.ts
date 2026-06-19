@@ -1,4 +1,7 @@
-import { detectDevEnvironment, formatDevEnvironment } from "../../src/environment/dev-environment.js";
+import {
+  detectDevEnvironment,
+  formatDevEnvironment,
+} from "../../src/environment/dev-environment.js";
 
 describe("DevEnvironment", () => {
   it("should detect dev environment", async () => {

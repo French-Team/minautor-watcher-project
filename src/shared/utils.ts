@@ -18,7 +18,7 @@ export function safeExecFile(
     execFile(
       command,
       args,
-      { timeout: options?.timeout ?? 60000, maxBuffer: 10 * 1024 * 1024 },
+      { timeout: options?.timeout ?? 15000, maxBuffer: 10 * 1024 * 1024 },
       (error, stdout, stderr) => {
         if (error) {
           reject(error);
@@ -43,11 +43,14 @@ export function safeSpawn(
   options?: SpawnOptions & { timeout?: number }
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolve, reject) => {
-    const timeout = options?.timeout ?? 60000;
+    const timeout = options?.timeout ?? 15000;
 
-    // On Windows, shell: true is needed for .cmd extensions (npx, npm)
+    // On Windows, shell: true is needed for npx/npm/yarn/pnpm (.cmd wrappers)
+    // and for any .cmd/.bat file (spawn cannot execute them directly)
     const isWindows = process.platform === "win32";
-    const needsShell = isWindows && /^(npx|npm|yarn|pnpm)$/i.test(command);
+    const needsShell =
+      isWindows &&
+      (/^(npx|npm|yarn|pnpm)$/i.test(command) || /\.(cmd|bat)$/i.test(command));
 
     const child = spawn(command, args, {
       cwd: options?.cwd,
@@ -267,6 +270,31 @@ export class Utils {
   }
 
   /**
+   * Cached stat with TTL to reduce repeated fs.stat calls (V5.5)
+   */
+  private static statCache = new Map<string, { stat: fs.Stats; timestamp: number }>();
+  private static readonly STAT_CACHE_TTL = 5_000;
+
+  static async statCached(filePath: string): Promise<fs.Stats> {
+    const now = Date.now();
+    const cached = Utils.statCache.get(filePath);
+    if (cached && now - cached.timestamp < Utils.STAT_CACHE_TTL) {
+      return cached.stat;
+    }
+    const stat = await fs.stat(filePath);
+    Utils.statCache.set(filePath, { stat, timestamp: now });
+    if (Utils.statCache.size > 500) {
+      const oldest = Utils.statCache.keys().next().value!;
+      Utils.statCache.delete(oldest);
+    }
+    return stat;
+  }
+
+  static clearStatCache(): void {
+    Utils.statCache.clear();
+  }
+
+  /**
    * Validate configuration object against schema
    */
   static validateConfig<T>(config: T, schema: Joi.ObjectSchema<T>): T {
@@ -309,7 +337,7 @@ export const ConfigSchemas = {
     autoCorrect: Joi.object({
       enabled: Joi.boolean().default(true),
       maxFileSize: Joi.string().default("1MB"),
-      timeout: Joi.number().default(30000),
+      timeout: Joi.number().default(15000),
     }),
     corrections: Joi.array().items(
       Joi.object({

@@ -78,6 +78,13 @@ export declare class Utils {
      */
     static parseFileSize(size: string | number): number;
     /**
+     * Cached stat with TTL to reduce repeated fs.stat calls (V5.5)
+     */
+    private static statCache;
+    private static readonly STAT_CACHE_TTL;
+    static statCached(filePath: string): Promise<fs.Stats>;
+    static clearStatCache(): void;
+    /**
      * Validate configuration object against schema
      */
     static validateConfig<T>(config: T, schema: Joi.ObjectSchema<T>): T;

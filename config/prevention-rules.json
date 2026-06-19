@@ -29,7 +29,7 @@
       "validators": [],
       "scripts": ["prettier-format"],
       "conditions": {
-        "fileExtensions": ["js", "ts", "jsx", "tsx", "json", "md"]
+        "fileExtensions": ["js", "ts", "jsx", "tsx", "json"]
       },
       "actions": {
         "autoFix": true,

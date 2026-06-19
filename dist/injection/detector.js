@@ -60,7 +60,13 @@ export async function checkInjectionStatus(options) {
     let outdatedCount = 0;
     for (const agent of targetAgents) {
         const templates = getTemplatesForAgent(agent);
+        const seenFiles = new Set();
         for (const template of templates) {
+            // Skip duplicate filenames for the same agent (e.g. ESLINT_TS + ESLINT_JS)
+            if (seenFiles.has(template.fileName)) {
+                continue;
+            }
+            seenFiles.add(template.fileName);
             const filePath = path.join(projectDir, template.fileName);
             const exists = await fileExists(filePath);
             let currentVersion;

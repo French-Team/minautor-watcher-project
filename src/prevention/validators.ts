@@ -2,7 +2,7 @@ import fs from "fs-extra";
 import path from "path";
 import { Utils, safeSpawn } from "../shared/utils.js";
 import { createChildLogger } from "../shared/logger.js";
-import { injectFiles, getEslintTemplate } from "../injection/index.js";
+import { getEslintTemplate } from "../injection/index.js";
 
 const logger = createChildLogger("prevention-validators");
 
@@ -128,12 +128,17 @@ export class ESLintValidator extends BaseValidator {
         return result;
       }
 
-      // Run ESLint on the file
-      const { stdout, stderr, exitCode } = await safeSpawn("npx", [
-        "eslint",
-        filePath,
-        "--format=json",
-      ]);
+      // Find project dir so we use the correct ESLint binary
+      const projectDir = await this.findProjectRoot(filePath);
+      const eslintCmd = await this.getEslintPath(projectDir);
+      const eslintArgs = ESLintValidator.usingNpx
+        ? ["eslint", filePath, "--format=json"]
+        : [filePath, "--format=json"];
+      const { stdout, stderr, exitCode } = await safeSpawn(
+        eslintCmd,
+        eslintArgs,
+        projectDir ? { cwd: projectDir } : undefined
+      );
 
       if (stderr) {
         logger.warn(`ESLint stderr for ${filePath}:`, stderr);
@@ -143,7 +148,9 @@ export class ESLintValidator extends BaseValidator {
       if (!stdout || stdout.trim() === "") {
         if (exitCode !== 0) {
           logger.warn(
-            `ESLint returned no output for ${filePath} (exit code ${exitCode})`
+            `ESLint returned no output for ${filePath} (exit code ${exitCode})${
+              stderr ? ` — ${stderr.substring(0, 500)}` : ""
+            }`
           );
         }
         return result;
@@ -171,6 +178,14 @@ export class ESLintValidator extends BaseValidator {
       }
 
       for (const fileResult of eslintResults) {
+        // Read file content once for all errors (V5.5 optimization)
+        let fileContent: string | null = null;
+        try {
+          fileContent = await fs.readFile(filePath, "utf-8");
+        } catch {
+          // Ignore read errors
+        }
+
         for (const message of fileResult.messages) {
           const validationMessage: ValidationError = {
             rule: message.ruleId || "unknown",
@@ -179,7 +194,7 @@ export class ESLintValidator extends BaseValidator {
             line: message.line,
             column: message.column,
             severity: message.severity === 2 ? "error" : "warning",
-            code: await this.getCodeSnippet(filePath, message.line),
+            code: this.getCodeSnippetFromContent(fileContent, message.line),
           };
 
           if (message.severity === 2) {
@@ -240,17 +255,107 @@ export class ESLintValidator extends BaseValidator {
   private eslintAvailable: boolean | null = null;
   private eslintConfigChecked = false;
   private eslintConfigMissing = false;
+  private static eslintPath: string | null = null;
+  private static usingNpx = false;
+  private static eslintPathByProject = new Map<string, { path: string; npx: boolean }>();
+
+  private async getEslintPath(projectDir?: string): Promise<string> {
+    // Return per-project cached path if available
+    if (projectDir && ESLintValidator.eslintPathByProject.has(projectDir)) {
+      const cached = ESLintValidator.eslintPathByProject.get(projectDir)!;
+      ESLintValidator.usingNpx = cached.npx;
+      return cached.path;
+    }
+
+    // If a project dir is provided, check for eslint there first
+    if (projectDir) {
+      const isWindows = process.platform === "win32";
+      const eslintName = isWindows ? "eslint.cmd" : "eslint";
+      const projectBin = path.join(projectDir, "node_modules", ".bin", eslintName);
+      const projectBinAlt = path.join(projectDir, "node_modules", ".bin", "eslint");
+
+      if (await Utils.pathExists(projectBin)) {
+        ESLintValidator.eslintPathByProject.set(projectDir, { path: projectBin, npx: false });
+        ESLintValidator.usingNpx = false;
+        logger.debug(`Using project ESLint: ${projectBin}`);
+        return projectBin;
+      }
+      if (!isWindows && (await Utils.pathExists(projectBinAlt))) {
+        ESLintValidator.eslintPathByProject.set(projectDir, { path: projectBinAlt, npx: false });
+        ESLintValidator.usingNpx = false;
+        logger.debug(`Using project ESLint: ${projectBinAlt}`);
+        return projectBinAlt;
+      }
+    }
+
+    // Fall back to global static path
+    if (ESLintValidator.eslintPath !== null) {
+      ESLintValidator.usingNpx = ESLintValidator.eslintPath === "npx";
+      return ESLintValidator.eslintPath;
+    }
+
+    const isWindows = process.platform === "win32";
+    const eslintName = isWindows ? "eslint.cmd" : "eslint";
+    const watcherPath = path.join(
+      process.cwd(),
+      "node_modules",
+      ".bin",
+      eslintName
+    );
+
+    const altPath = path.join(process.cwd(), "node_modules", ".bin", "eslint");
+
+    if (await Utils.pathExists(watcherPath)) {
+      ESLintValidator.eslintPath = watcherPath;
+      ESLintValidator.usingNpx = false;
+      logger.debug(`Using watcher ESLint: ${watcherPath}`);
+    } else if (!isWindows && (await Utils.pathExists(altPath))) {
+      ESLintValidator.eslintPath = altPath;
+      ESLintValidator.usingNpx = false;
+      logger.debug(`Using watcher ESLint: ${altPath}`);
+    } else {
+      ESLintValidator.eslintPath = "npx";
+      ESLintValidator.usingNpx = true;
+      logger.debug("Local ESLint not found, falling back to npx");
+    }
+    return ESLintValidator.eslintPath;
+  }
+
+  /**
+   * Detect the ESLint major version in the target project from its package.json.
+   * Returns { major: 0, hasESLint: false } if no eslint dependency found.
+   */
+  private async getProjectESLintVersion(projectDir: string): Promise<{ major: number; hasESLint: boolean }> {
+    const pkgPath = path.join(projectDir, "package.json");
+    try {
+      const pkg = await fs.readJson(pkgPath);
+      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+      const eslintVer = deps?.eslint as string | undefined;
+      if (!eslintVer) {
+        return { major: 0, hasESLint: false };
+      }
+      const match = eslintVer.match(/\d+/);
+      const major = match ? parseInt(match[0], 10) : 0;
+      return { major, hasESLint: true };
+    } catch {
+      return { major: 0, hasESLint: false };
+    }
+  }
 
   private async checkESLintAvailability(): Promise<void> {
     if (this.eslintAvailable !== null) return;
 
     try {
-      await safeSpawn("npx", ["eslint", "--version"]);
+      const eslintCmd = await this.getEslintPath();
+      const args = ESLintValidator.usingNpx
+        ? ["eslint", "--version"]
+        : ["--version"];
+      await safeSpawn(eslintCmd, args);
       this.eslintAvailable = true;
     } catch (error) {
       this.eslintAvailable = false;
       throw new Error(
-        "ESLint is not available. Please install it: npm install -g eslint"
+        "ESLint is not available. Please install it: npm install eslint"
       );
     }
   }
@@ -259,12 +364,17 @@ export class ESLintValidator extends BaseValidator {
    * Check if the target project has an ESLint configuration.
    * If missing, auto-detects TS/JS and injects a config file.
    * Called once per validator instance.
+   *
+   * Fixes:
+   * - Searches upward for the real project root (package.json/.git/tsconfig.json)
+   * - Writes template directly (bypasses injectFiles which has duplicate template bug)
+   * - Writes raw JSON content (no HTML comment prefix that breaks JSON parsing)
    */
   private async checkESLintConfig(filePath: string): Promise<boolean> {
     if (this.eslintConfigChecked) return !this.eslintConfigMissing;
     this.eslintConfigChecked = true;
 
-    const projectDir = path.dirname(filePath);
+    const projectDir = await this.findProjectRoot(filePath);
     const configFiles = [
       ".eslintrc",
       ".eslintrc.js",
@@ -308,44 +418,48 @@ export class ESLintValidator extends BaseValidator {
     // No config found — inject one
     logger.info(`ESLint config not found in ${projectDir}, injecting...`);
 
-    // Auto-detect TypeScript vs JavaScript
+    // Detect project ESLint version to choose config format
+    const projectEslintVer = await this.getProjectESLintVersion(projectDir);
     const isTypescript = await this.detectTypescript(projectDir);
-    const template = getEslintTemplate(isTypescript);
 
-    const results = await injectFiles({
-      projectDir,
-      agents: ["eslint"],
-      config: {
-        enabled: true,
-        templates: ["eslint"],
-        autoInject: false,
-        autoUpdate: false,
-        forceOverwrite: false,
-        projectPatterns: [],
-      },
-      force: true,
-    });
-
-    const injected = results.find((r) => r.agent === "eslint");
-    if (
-      injected &&
-      (injected.action === "created" || injected.action === "updated")
-    ) {
-      logger.success(
-        `ESLint config injected: ${template.fileName} (${
-          isTypescript ? "TypeScript" : "JavaScript"
-        })`
-      );
-      return true;
+    if (projectEslintVer.hasESLint && projectEslintVer.major < 9) {
+      // ESLint v8 — inject .eslintrc.json, skip npm install (project has its own deps)
+      const template = getEslintTemplate(isTypescript);
+      await this.injectDotESLintConfig(projectDir, template);
+      logger.debug("Project already has ESLint deps, skipping npm install");
+    } else {
+      // ESLint v9+, or no ESLint at all — inject flat config
+      // For "no ESLint" projects, we also install latest ESLint + plugins
+      await this.injectFlatESLintConfig(projectDir, isTypescript);
+      if (!projectEslintVer.hasESLint) {
+        await this.ensureESLintPackages(projectDir, isTypescript);
+      }
     }
 
-    logger.error(
-      `Failed to inject ESLint config in ${projectDir}: ${
-        injected?.reason || "unknown error"
-      }`
-    );
-    this.eslintConfigMissing = true;
-    return false;
+    return true;
+  }
+
+  /**
+   * Find the project root by climbing directories looking for
+   * package.json, .git, or tsconfig.json
+   */
+  private async findProjectRoot(filePath: string): Promise<string> {
+    let dir = path.resolve(path.dirname(filePath));
+    const root = path.parse(dir).root;
+
+    for (let i = 0; i < 10; i++) {
+      const indicators = ["package.json", ".git", "tsconfig.json"];
+      for (const indicator of indicators) {
+        if (await fs.pathExists(path.join(dir, indicator))) {
+          return dir;
+        }
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir || parent === root) break;
+      dir = parent;
+    }
+
+    return path.resolve(path.dirname(filePath));
   }
 
   /**
@@ -375,6 +489,177 @@ export class ESLintValidator extends BaseValidator {
     return false;
   }
 
+  /**
+   * Inject a traditional .eslintrc.json config for ESLint v8 projects.
+   */
+  private async injectDotESLintConfig(
+    projectDir: string,
+    template: { fileName: string; content: string }
+  ): Promise<void> {
+    const eslintPath = path.join(projectDir, template.fileName);
+    try {
+      await fs.ensureDir(projectDir);
+      await fs.writeFile(eslintPath, template.content, "utf-8");
+      logger.success(
+        `ESLint config injected: ${template.fileName} at ${projectDir}`
+      );
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(`Failed to inject ESLint config: ${errorMessage}`);
+      this.eslintConfigMissing = true;
+      throw error;
+    }
+  }
+
+  /**
+   * Inject an ESLint flat config (eslint.config.js) for ESLint 9+ projects.
+   * These projects already have ESLint + TS plugins installed; we only
+   * provide the config file with our standard rules.
+   */
+  private async injectFlatESLintConfig(
+    projectDir: string,
+    isTypescript: boolean
+  ): Promise<void> {
+    const configPath = path.join(projectDir, "eslint.config.js");
+    const flatConfig = isTypescript
+      ? `import tsParser from '@typescript-eslint/parser';
+import tsPlugin from '@typescript-eslint/eslint-plugin';
+
+export default [
+  {
+    files: ['**/*.ts', '**/*.tsx'],
+    languageOptions: {
+      parser: tsParser,
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+    },
+    plugins: {
+      '@typescript-eslint': tsPlugin,
+    },
+    rules: {
+      '@typescript-eslint/no-unused-vars': 'warn',
+      '@typescript-eslint/no-explicit-any': 'warn',
+      'prefer-const': 'error',
+      'no-console': 'warn',
+    },
+  },
+];
+`
+      : `export default [
+  {
+    files: ['**/*.js', '**/*.jsx'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+    },
+    rules: {
+      'no-unused-vars': 'warn',
+      'prefer-const': 'error',
+      'no-console': 'warn',
+    },
+  },
+];
+`;
+
+    try {
+      await fs.ensureDir(projectDir);
+      await fs.writeFile(configPath, flatConfig, "utf-8");
+      logger.success(
+        `ESLint flat config injected: eslint.config.js at ${projectDir} (${
+          isTypescript ? "TypeScript" : "JavaScript"
+        })`
+      );
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(`Failed to inject ESLint flat config: ${errorMessage}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Ensure required ESLint packages are installed in the target project.
+   * Installs via `npm install --save-dev` in the project directory.
+   */
+  private async ensureESLintPackages(
+    projectDir: string,
+    isTypescript: boolean
+  ): Promise<void> {
+    // Install latest stable versions (ESLint 10+, flat config)
+    const ESLINT_VERSION = "eslint@^10.0.0";
+    const TS_ESLINT_VERSION = "@typescript-eslint/eslint-plugin@^8.0.0";
+    const TS_PARSER_VERSION = "@typescript-eslint/parser@^8.0.0";
+    const requiredPackages = [
+      ESLINT_VERSION,
+      ...(isTypescript ? [TS_ESLINT_VERSION, TS_PARSER_VERSION] : []),
+    ];
+
+    // Only install if the project has a package.json (skip temp/test dirs)
+    const packageJsonPath = path.join(projectDir, "package.json");
+    if (!(await fs.pathExists(packageJsonPath))) {
+      logger.debug(
+        "Skipping ESLint package install — no package.json in project"
+      );
+      return;
+    }
+
+    // Check which packages are already installed
+    const missingPackages: string[] = [];
+    for (const pkg of requiredPackages) {
+      const pkgName = pkg.replace(/@[^@]+$/, ""); // strip version: "eslint@^8" -> "eslint"
+      const pkgPath = path.join(projectDir, "node_modules", pkgName, "package.json");
+      if (!(await fs.pathExists(pkgPath))) {
+        missingPackages.push(pkg);
+      }
+    }
+
+    if (missingPackages.length === 0) {
+      logger.debug("All ESLint packages already installed in target project");
+      return;
+    }
+
+    logger.info(
+      `Installing missing ESLint packages in ${projectDir}: ${missingPackages.join(
+        ", "
+      )}`
+    );
+
+    try {
+      const args = [
+        "install",
+        "--save-dev",
+        "--no-audit",
+        "--no-fund",
+        ...missingPackages,
+      ];
+      const { exitCode, stderr } = await safeSpawn("npm", args, {
+        cwd: projectDir,
+        timeout: 60000,
+      });
+
+      if (exitCode === 0) {
+        logger.success(
+          `ESLint packages installed in ${projectDir}: ${missingPackages.join(
+            ", "
+          )}`
+        );
+      } else {
+        logger.warn(
+          `npm install failed in ${projectDir} (exit ${exitCode}): ${
+            stderr?.substring(0, 300) || ""
+          }`
+        );
+      }
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.warn(
+        `Failed to install ESLint packages in ${projectDir}: ${errorMessage}`
+      );
+    }
+  }
+
   private async getCodeSnippet(
     filePath: string,
     lineNumber?: number
@@ -383,13 +668,26 @@ export class ESLintValidator extends BaseValidator {
 
     try {
       const content = await fs.readFile(filePath, "utf-8");
-      const lines = content.split("\n");
-
-      if (lineNumber <= lines.length) {
-        return lines[lineNumber - 1].trim();
-      }
+      return this.getCodeSnippetFromContent(content, lineNumber);
     } catch (error) {
       logger.warn(`Could not read code snippet for ${filePath}:${lineNumber}`);
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Extract code snippet from pre-read content (V5.5 optimization)
+   */
+  private getCodeSnippetFromContent(
+    content: string | null,
+    lineNumber?: number
+  ): string | undefined {
+    if (!lineNumber || !content) return undefined;
+
+    const lines = content.split("\n");
+    if (lineNumber <= lines.length) {
+      return lines[lineNumber - 1].trim();
     }
 
     return undefined;
@@ -503,6 +801,11 @@ export class YAMLValidator extends BaseValidator {
  * Custom pattern validator
  */
 export class PatternValidator extends BaseValidator {
+  private static fileCache = new Map<
+    string,
+    { content: string; mtime: number }
+  >();
+
   constructor(config: ValidatorConfig) {
     super("pattern", config);
   }
@@ -519,7 +822,24 @@ export class PatternValidator extends BaseValidator {
     }
 
     try {
-      const content = await fs.readFile(filePath, "utf-8");
+      // Cache: re-read only if file changed (by mtime)
+      let content: string;
+      const stat = await fs.stat(filePath);
+      const mtimeMs = stat.mtimeMs;
+      const cached = PatternValidator.fileCache.get(filePath);
+
+      if (cached && cached.mtime === mtimeMs) {
+        content = cached.content;
+      } else {
+        content = await fs.readFile(filePath, "utf-8");
+        PatternValidator.fileCache.set(filePath, { content, mtime: mtimeMs });
+        // Limit cache size
+        if (PatternValidator.fileCache.size > 200) {
+          const firstKey = PatternValidator.fileCache.keys().next().value!;
+          PatternValidator.fileCache.delete(firstKey);
+        }
+      }
+
       const lines = content.split("\n");
 
       for (let i = 0; i < lines.length; i++) {
@@ -666,7 +986,7 @@ export class ValidatorRegistry {
       json: ["json"],
       yaml: ["yaml"],
       yml: ["yaml"],
-      md: ["pattern"],
+      md: [],
     };
 
     return validatorsByExtension[extension]?.includes(validatorName) || false;

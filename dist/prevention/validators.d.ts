@@ -75,8 +75,58 @@ export declare class ESLintValidator extends BaseValidator {
     constructor(config: ValidatorConfig);
     validate(filePath: string): Promise<ValidationResult>;
     private eslintAvailable;
+    private eslintConfigChecked;
+    private eslintConfigMissing;
+    private static eslintPath;
+    private static usingNpx;
+    private static eslintPathByProject;
+    private getEslintPath;
+    /**
+     * Detect the ESLint major version in the target project from its package.json.
+     * Returns { major: 0, hasESLint: false } if no eslint dependency found.
+     */
+    private getProjectESLintVersion;
     private checkESLintAvailability;
+    /**
+     * Check if the target project has an ESLint configuration.
+     * If missing, auto-detects TS/JS and injects a config file.
+     * Called once per validator instance.
+     *
+     * Fixes:
+     * - Searches upward for the real project root (package.json/.git/tsconfig.json)
+     * - Writes template directly (bypasses injectFiles which has duplicate template bug)
+     * - Writes raw JSON content (no HTML comment prefix that breaks JSON parsing)
+     */
+    private checkESLintConfig;
+    /**
+     * Find the project root by climbing directories looking for
+     * package.json, .git, or tsconfig.json
+     */
+    private findProjectRoot;
+    /**
+     * Detect if a project uses TypeScript by looking for .ts/.tsx files
+     */
+    private detectTypescript;
+    /**
+     * Inject a traditional .eslintrc.json config for ESLint v8 projects.
+     */
+    private injectDotESLintConfig;
+    /**
+     * Inject an ESLint flat config (eslint.config.js) for ESLint 9+ projects.
+     * These projects already have ESLint + TS plugins installed; we only
+     * provide the config file with our standard rules.
+     */
+    private injectFlatESLintConfig;
+    /**
+     * Ensure required ESLint packages are installed in the target project.
+     * Installs via `npm install --save-dev` in the project directory.
+     */
+    private ensureESLintPackages;
     private getCodeSnippet;
+    /**
+     * Extract code snippet from pre-read content (V5.5 optimization)
+     */
+    private getCodeSnippetFromContent;
 }
 /**
  * JSON validator
@@ -96,6 +146,7 @@ export declare class YAMLValidator extends BaseValidator {
  * Custom pattern validator
  */
 export declare class PatternValidator extends BaseValidator {
+    private static fileCache;
     constructor(config: ValidatorConfig);
     validate(filePath: string): Promise<ValidationResult>;
 }

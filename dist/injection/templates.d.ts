@@ -23,4 +23,9 @@ export declare function getFileNameForAgent(agent: AgentType): string | undefine
  * Get the managed-by header
  */
 export declare function getManagedHeader(): string;
+/**
+ * Get the ESLint config template for a project.
+ * Auto-detects TypeScript vs JavaScript based on file presence.
+ */
+export declare function getEslintTemplate(isTypescript: boolean): ConsignmentTemplate;
 //# sourceMappingURL=templates.d.ts.map

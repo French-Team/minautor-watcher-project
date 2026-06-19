@@ -99,6 +99,14 @@ export declare class DetectionEventBus extends EventEmitter {
  */
 export declare const eventBus: DetectionEventBus;
 /**
+ * Register a listener with automatic cleanup tracking
+ */
+export declare function trackListener(event: DetectionEvent, listener: (...args: any[]) => void): void;
+/**
+ * Remove all tracked listeners (call on stop/reload)
+ */
+export declare function cleanupAllListeners(): void;
+/**
  * Utility functions for event handling
  */
 export declare class EventUtils {

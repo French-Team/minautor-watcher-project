@@ -1,6 +1,6 @@
 import { WatcherEvent, createWatcher } from "./watcher.js";
 import { FilterPresets, createFileFilter, } from "./filters.js";
-import { DetectionEvent, eventBus as defaultEventBus, } from "./events.js";
+import { DetectionEvent, eventBus as defaultEventBus, cleanupAllListeners, } from "./events.js";
 import { Utils, ConfigSchemas } from "../shared/utils.js";
 import { createChildLogger } from "../shared/logger.js";
 const logger = createChildLogger("detection");
@@ -22,6 +22,8 @@ export class DetectionModule {
             excludedDirs: config.excludedDirs,
             watchExtensions: config.watchExtensions,
             processingDelay: config.processingDelay,
+            processExisting: config.processExisting,
+            processExistingDelay: config.processExistingDelay,
         });
         // Create filter instance (note: extensions also filtered by Watcher.shouldProcessFile -
         // double-check is intentional for defense-in-depth when FileFilter is used standalone)
@@ -64,6 +66,8 @@ export class DetectionModule {
             logger.info("Stopping detection module...");
             // Stop the file watcher
             await this.watcher.stop();
+            // V5.9: Cleanup all tracked listeners to prevent memory leaks
+            cleanupAllListeners();
             this.isRunning = false;
             logger.success("Detection module stopped successfully");
         }
@@ -71,6 +75,12 @@ export class DetectionModule {
             logger.error("Failed to stop detection module:", error);
             throw error;
         }
+    }
+    /**
+     * Wait for the initial scan to complete
+     */
+    async waitForScanComplete() {
+        return this.watcher.waitForScanComplete();
     }
     /**
      * Update filter criteria
@@ -111,6 +121,8 @@ export class DetectionModule {
         this.filter = createFileFilter(filterCriteria);
         // If running, restart the watcher with new config
         if (this.isRunning) {
+            // V5.9: Cleanup listeners before re-adding
+            cleanupAllListeners();
             await this.watcher.stop();
             this.watcher = createWatcher({
                 watchDir: newConfig.watchDir,

@@ -203,7 +203,7 @@ export class TriggerRuleManager {
                 enabled: true,
                 priority: 10,
                 conditions: {
-                    eventTypes: ["fileModified"],
+                    eventTypes: ["fileModified", "preventionFailed"],
                     fileExtensions: ["js", "ts", "jsx", "tsx"],
                     errorPatterns: ["eslint"],
                 },
@@ -222,7 +222,7 @@ export class TriggerRuleManager {
                 enabled: true,
                 priority: 5,
                 conditions: {
-                    eventTypes: ["fileModified"],
+                    eventTypes: ["fileModified", "preventionFailed"],
                     fileExtensions: [
                         "js",
                         "ts",

@@ -1,33 +1,57 @@
 // Exemple : src/detection/watcher.ts
-// Surveillance de fichiers avec Chokidar
+// Surveillance de fichiers avec fs.watch natif
 
-import chokidar from "chokidar";
+import * as fs from "fs";
+import * as path from "path";
 import { EventEmitter } from "events";
 
 export class FileWatcher extends EventEmitter {
-  private watcher: chokidar.FSWatcher;
+  private watcher: fs.FSWatcher | null = null;
+  private timers: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(private watchDir: string) {
     super();
   }
 
   start() {
-    this.watcher = chokidar.watch(this.watchDir, {
-      ignored: /node_modules|watcher-service/, // Exclure le Watcher lui-même
-      persistent: true,
-    });
+    this.watcher = fs.watch(
+      this.watchDir,
+      { recursive: true },
+      (eventType, filename) => {
+        if (!filename) return;
 
-    this.watcher.on("add", (path) => this.emit("fileAdded", path));
-    this.watcher.on("change", (path) => this.emit("fileChanged", path));
-    this.watcher.on("unlink", (path) => this.emit("fileDeleted", path));
+        // Debounce 300ms
+        const existing = this.timers.get(filename);
+        if (existing) clearTimeout(existing);
+
+        this.timers.set(
+          filename,
+          setTimeout(() => {
+            this.timers.delete(filename);
+            if (eventType === "rename") {
+              const fullPath = path.join(this.watchDir, filename);
+              if (fs.existsSync(fullPath)) {
+                this.emit("fileAdded", fullPath);
+              } else {
+                this.emit("fileDeleted", fullPath);
+              }
+            } else {
+              this.emit("fileChanged", path.join(this.watchDir, filename));
+            }
+          }, 300)
+        );
+      }
+    );
   }
 
   stop() {
-    if (this.watcher) this.watcher.close();
+    this.watcher?.close();
+    this.timers.forEach((t) => clearTimeout(t));
+    this.timers.clear();
   }
 }
 
 // Utilisation dans index.ts :
 const watcher = new FileWatcher("./project");
-watcher.on("fileChanged", (path) => `Fichier changé : ${path}`));
+watcher.on("fileChanged", (path) => `Fichier change : ${path}`));
 watcher.start();

@@ -295,7 +295,7 @@ describe("V3.1 - Injection System", () => {
       expect(skipped.length).toBeGreaterThanOrEqual(1);
     });
 
-    test("should overwrite existing files with force", async () => {
+    test("should append watcher section to existing files with force", async () => {
       await fs.writeFile(
         path.join(tmpDir, "CLAUDE.md"),
         "# My custom rules",
@@ -310,26 +310,51 @@ describe("V3.1 - Injection System", () => {
 
       const updated = results.filter((r) => r.action === "updated");
       expect(updated.length).toBeGreaterThanOrEqual(1);
-    });
 
-    test("should create backup before overwrite", async () => {
-      await fs.writeFile(
+      // Original content is preserved
+      const content = await fs.readFile(
         path.join(tmpDir, "CLAUDE.md"),
-        "# My custom rules",
         "utf-8"
       );
+      expect(content).toContain("# My custom rules");
+      expect(content).toContain("<!-- watcher-service:start -->");
+    });
 
+    test("should preserve existing content after re-injection (marker merge)", async () => {
+      // First injection
       await injectFiles({
         projectDir: tmpDir,
         agents: ["claude"],
         force: true,
       });
 
-      const backupExists = await fs
-        .access(path.join(tmpDir, "CLAUDE.md.bak"))
-        .then(() => true)
-        .catch(() => false);
-      expect(backupExists).toBe(true);
+      // Add user content OUTSIDE the markers
+      const firstPath = path.join(tmpDir, "CLAUDE.md");
+      let content = await fs.readFile(firstPath, "utf-8");
+      content = "# INSTRUCTION PERSO: ne jamais toucher au dossier secrets\n\n" + content;
+      content += "\n\n# Note utilisateur: verifier la config avant chaque run\n";
+      await fs.writeFile(firstPath, content, "utf-8");
+
+      // Re-inject with force
+      const results = await injectFiles({
+        projectDir: tmpDir,
+        agents: ["claude"],
+        force: true,
+      });
+
+      const updated = results.filter((r) => r.action === "updated");
+      expect(updated.length).toBeGreaterThanOrEqual(1);
+
+      // User content is preserved
+      const finalContent = await fs.readFile(firstPath, "utf-8");
+      expect(finalContent).toContain("# INSTRUCTION PERSO: ne jamais toucher au dossier secrets");
+      expect(finalContent).toContain("# Note utilisateur: verifier la config avant chaque run");
+      expect(finalContent).toContain("<!-- watcher-service:start -->");
+      expect(finalContent).toContain("<!-- watcher-service:end -->");
+
+      // Watcher section only appears once
+      const startCount = finalContent.split("<!-- watcher-service:start -->").length - 1;
+      expect(startCount).toBe(1);
     });
 
     test("should handle dry run", async () => {

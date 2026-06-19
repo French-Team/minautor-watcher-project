@@ -20,15 +20,32 @@ export interface WatcherConfig {
     persistent: boolean;
     ignoreInitial: boolean;
     maxQueueSize?: number;
+    /** If true, emit FILE_ADDED for each existing file during initial scan */
+    processExisting?: boolean;
+    /** Delay (ms) between emitting each existing file event (prevents CPU flood) */
+    processExistingDelay?: number;
 }
 /**
- * File watcher class that monitors file system changes
+ * File watcher class that monitors file system changes.
+ *
+ * Uses native fs.watch({ recursive: true }) which creates
+ * a single ReadDirectoryChangesW handle instead of one per subdirectory.
  */
 export declare class Watcher extends EventEmitter {
-    private watcher;
+    private nativeWatcher;
     private config;
     private processingQueue;
+    private pendingEvents;
     private maxQueueSize;
+    private watchedCount;
+    private ignoredDirs;
+    private ignoredExtensions;
+    private watchIgnorePatterns;
+    private recentlyEmitted;
+    private recentlyEmittedTTL;
+    private scanCompletePromise;
+    private resolveScanComplete;
+    private running;
     constructor(config: WatcherConfig);
     /**
      * Start watching the specified directory
@@ -39,21 +56,26 @@ export declare class Watcher extends EventEmitter {
      */
     stop(): Promise<void>;
     /**
-     * Create ignore patterns for Chokidar (glob strings)
+     * Recursively count files matching watched extensions.
+     * If processExisting is enabled, emit FILE_ADDED for each file (with delay to prevent CPU flood).
+     * Otherwise, just count — only real-time changes from fs.watch trigger the pipeline.
      */
-    private createIgnorePatterns;
+    private scanInitialFiles;
     /**
-     * Set up Chokidar event listeners
+     * Handle an event from native fs.watch.
+     * Filename is relative to the watched directory.
      */
-    private setupEventListeners;
+    private handleNativeEvent;
     /**
-     * Handle file events with debouncing
+     * Check if a relative path should be ignored.
+     * Checks: ALWAYS_IGNORED, excludedDirs, .watchignore patterns, ignored extensions.
+     */
+    private isIgnored;
+    /**
+     * Handle file events with debouncing.
+     * FILE_ADDED has priority over FILE_CHANGED for the same file.
      */
     private handleFileEvent;
-    /**
-     * Check if file should be processed based on extension
-     */
-    private shouldProcessFile;
     /**
      * Process the actual file event
      */
@@ -65,6 +87,12 @@ export declare class Watcher extends EventEmitter {
         isRunning: boolean;
         watchedFiles: number;
     };
+    /**
+     * Wait for the initial scan to complete
+     */
+    waitForScanComplete(): Promise<{
+        fileCount: number;
+    }>;
 }
 /**
  * Factory function to create a watcher instance

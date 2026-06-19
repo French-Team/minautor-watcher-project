@@ -3,6 +3,7 @@ import fs from "fs-extra";
 import path from "path";
 import os from "os";
 import {
+  ESLintValidator,
   JSONValidator,
   PatternValidator,
   ValidatorRegistry,
@@ -173,6 +174,163 @@ describe("Validators", () => {
       expect(names).toContain("json");
       expect(names).toContain("yaml");
       expect(names).toContain("pattern");
+    });
+  });
+
+  describe("ESLintValidator (V5)", () => {
+    it("should skip when disabled", async () => {
+      const filePath = path.join(TEST_DIR, "eslint-disabled.ts");
+      await fs.writeFile(filePath, "const x = 1;");
+      const validator = new ESLintValidator({ enabled: false, rules: {} });
+      const result = await validator.validate(filePath);
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("should return valid when ESLint is not available", async () => {
+      const filePath = path.join(TEST_DIR, "eslint-unavailable.ts");
+      await fs.writeFile(filePath, "const x = 1;");
+      const validator = new ESLintValidator({ enabled: true, rules: {} });
+      const result = await validator.validate(filePath);
+      expect(result).toBeDefined();
+      expect(typeof result.isValid).toBe("boolean");
+    });
+
+    it("should detect typescript project via .ts files in root", async () => {
+      const projectDir = path.join(TEST_DIR, "detect-ts-root");
+      await fs.ensureDir(projectDir);
+      await fs.writeFile(path.join(projectDir, "main.ts"), "export {}");
+
+      const { injectFiles } = await import("../../src/injection/index.js");
+      const { getEslintTemplate } = await import(
+        "../../src/injection/index.js"
+      );
+
+      const isTypescript = (await fs.readdir(projectDir)).some(
+        (f) => f.endsWith(".ts") || f.endsWith(".tsx")
+      );
+      expect(isTypescript).toBe(true);
+
+      const template = getEslintTemplate(isTypescript);
+      expect(template.fileName).toBe(".eslintrc.json");
+
+      const results = await injectFiles({
+        projectDir,
+        agents: ["eslint"],
+        config: {
+          enabled: true,
+          templates: ["eslint"],
+          autoInject: false,
+          autoUpdate: false,
+          forceOverwrite: false,
+          projectPatterns: [],
+        },
+        force: true,
+      });
+
+      expect(results.length).toBeGreaterThan(0);
+      const injected = results.find((r) => r.agent === "eslint");
+      expect(injected?.action).toBe("created");
+      expect(await fs.pathExists(path.join(projectDir, ".eslintrc.json"))).toBe(
+        true
+      );
+
+      await fs.remove(projectDir);
+    });
+
+    it("should detect javascript project (no .ts files)", async () => {
+      const projectDir = path.join(TEST_DIR, "detect-js-only");
+      await fs.ensureDir(projectDir);
+      await fs.writeFile(
+        path.join(projectDir, "main.js"),
+        "module.exports = {}"
+      );
+
+      const { getEslintTemplate } = await import(
+        "../../src/injection/index.js"
+      );
+
+      const entries = await fs.readdir(projectDir);
+      const isTypescript = entries.some(
+        (f) => f.endsWith(".ts") || f.endsWith(".tsx")
+      );
+      expect(isTypescript).toBe(false);
+
+      const template = getEslintTemplate(isTypescript);
+      expect(template.id).toBe("eslint-javascript");
+
+      await fs.remove(projectDir);
+    });
+
+    it("should inject ESLint config when missing and project has TS files", async () => {
+      const projectDir = path.join(TEST_DIR, "eslint-inject-ts");
+      await fs.ensureDir(projectDir);
+      await fs.writeFile(path.join(projectDir, "main.ts"), "export {}");
+
+      const filePath = path.join(projectDir, "test.ts");
+      await fs.writeFile(filePath, "const x = 1;\n");
+
+      const { injectFiles } = await import("../../src/injection/index.js");
+      const results = await injectFiles({
+        projectDir,
+        agents: ["eslint"],
+        config: {
+          enabled: true,
+          templates: ["eslint"],
+          autoInject: false,
+          autoUpdate: false,
+          forceOverwrite: false,
+          projectPatterns: [],
+        },
+        force: true,
+      });
+
+      const injected = results.find((r) => r.agent === "eslint");
+      expect(
+        injected?.action === "created" || injected?.action === "updated"
+      ).toBe(true);
+      expect(await fs.pathExists(path.join(projectDir, ".eslintrc.json"))).toBe(
+        true
+      );
+
+      await fs.remove(projectDir);
+    });
+
+    it("should inject ESLint config for JS-only projects", async () => {
+      const projectDir = path.join(TEST_DIR, "eslint-inject-js");
+      await fs.ensureDir(projectDir);
+      await fs.writeFile(
+        path.join(projectDir, "main.js"),
+        "module.exports = {}"
+      );
+
+      const filePath = path.join(projectDir, "test.js");
+      await fs.writeFile(filePath, "const x = 1;\n");
+
+      const { injectFiles } = await import("../../src/injection/index.js");
+      const results = await injectFiles({
+        projectDir,
+        agents: ["eslint"],
+        config: {
+          enabled: true,
+          templates: ["eslint"],
+          autoInject: false,
+          autoUpdate: false,
+          forceOverwrite: false,
+          projectPatterns: [],
+        },
+        force: true,
+      });
+
+      const injected = results.find((r) => r.agent === "eslint");
+      expect(
+        injected?.action === "created" || injected?.action === "updated"
+      ).toBe(true);
+      expect(await fs.pathExists(path.join(projectDir, ".eslintrc.json"))).toBe(
+        true
+      );
+
+      await fs.remove(projectDir);
     });
   });
 });

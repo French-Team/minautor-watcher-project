@@ -8,6 +8,10 @@ export interface ScriptResult {
     exitCode: number;
     executionTime: number;
     error?: Error;
+    toolErrors?: Array<{
+        tool: string;
+        message: string;
+    }>;
 }
 /**
  * Script configuration
@@ -38,6 +42,11 @@ export interface ScriptExecutionOptions {
 export declare class ScriptRunner {
     private scripts;
     private runningScripts;
+    private concurrencyLimit;
+    /**
+     * Run tasks with concurrency limit
+     */
+    private runWithLimit;
     /**
      * Add a script to the runner
      */
@@ -53,7 +62,7 @@ export declare class ScriptRunner {
     /**
      * Execute a script by name
      */
-    executeScript(name: string, options?: ScriptExecutionOptions): Promise<ScriptResult>;
+    executeScript(name: string, options?: ScriptExecutionOptions, filePath?: string): Promise<ScriptResult>;
     /**
      * Execute all scripts that match the given file path
      */
@@ -80,23 +89,23 @@ export declare class ScriptRunner {
  */
 export declare const PredefinedScripts: {
     /**
-     * ESLint with auto-fix
+     * ESLint with auto-fix (targets specific file, not entire project)
      */
     eslintFix: (config?: Partial<ScriptConfig>) => ScriptConfig;
     /**
-     * Prettier formatting
+     * Prettier formatting (targets specific file)
      */
     prettierFormat: (config?: Partial<ScriptConfig>) => ScriptConfig;
     /**
-     * TypeScript type checking
+     * TypeScript type checking (project-wide, cannot target single file)
      */
     typescriptCheck: (config?: Partial<ScriptConfig>) => ScriptConfig;
     /**
-     * Security audit
+     * Security audit (disabled by default - too heavy for file watcher)
      */
     securityAudit: (config?: Partial<ScriptConfig>) => ScriptConfig;
     /**
-     * Dependency vulnerability check
+     * Dependency check (disabled by default - too heavy for file watcher)
      */
     dependencyCheck: (config?: Partial<ScriptConfig>) => ScriptConfig;
 };

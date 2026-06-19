@@ -39,7 +39,7 @@ Ces règles empêchent les erreurs courantes et améliorent la qualité du code.
 Le choix et l'organisation des modules impactent la modularité et la réutilisabilité. Sélectionner des modules open source fiables et organiser pour une séparation claire.
 
 - **Sélection de modules** :
-  - Privilégier les modules populaires et maintenus (ex. : Chokidar > fs.watch natif pour la robustesse).
+  - Privilégier fs.watch natif Node.js (`recursive: true`) — zero dépendance, un seul handle Windows.
   - Vérifier la compatibilité avec Node.js 14+ et les licences open source.
   - Éviter la sur-dépendance : Ne pas ajouter un module pour une fonctionnalité mineure si elle peut être implémentée simplement.
 - **Organisation des modules** :

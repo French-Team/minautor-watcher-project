@@ -2,7 +2,7 @@
  * Injection system types
  * Defines interfaces for the consignment file injection system (V3.1)
  */
-export type AgentType = "claude" | "copilot" | "cursor" | "windsurf" | "aider" | "generic";
+export type AgentType = "claude" | "copilot" | "cursor" | "windsurf" | "aider" | "generic" | "eslint";
 /**
  * A consignment template for a specific agent
  */

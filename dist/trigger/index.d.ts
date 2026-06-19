@@ -40,7 +40,7 @@ export declare class TriggerModule {
      */
     processEvent(context: TriggerContext): Promise<TriggerResult[]>;
     /**
-     * Execute multiple trigger rules
+     * Execute multiple trigger rules (V5.6: parallel execution)
      */
     private executeRules;
     /**

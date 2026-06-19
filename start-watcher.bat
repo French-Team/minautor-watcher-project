@@ -11,9 +11,23 @@ echo.
 node scripts\env-banner.cjs
 echo.
 
-REM --- Clear logs on startup ---
+REM --- Reset logs on startup (fichiers uniques, pas de rotation) ---
 if exist "%PROJECT_DIR%\logs\combined.log" type nul > "%PROJECT_DIR%\logs\combined.log"
 if exist "%PROJECT_DIR%\logs\error.log" type nul > "%PROJECT_DIR%\logs\error.log"
+if exist "%PROJECT_DIR%\logs\warnings.log" type nul > "%PROJECT_DIR%\logs\warnings.log"
+
+REM --- Auto-rebuild dist pour garantir la coherence ---
+echo.
+echo  [BUILD] Compilation TypeScript...
+cd /d "%PROJECT_DIR%"
+call npx tsc
+if %ERRORLEVEL% neq 0 (
+    echo  [ERREUR] La compilation a echoue. Corrigez les erreurs avant de lancer le watcher.
+    pause
+    exit /b 1
+)
+echo  [BUILD] Compilation reussie.
+echo.
 
 :menu
 echo  =============================================
@@ -31,9 +45,13 @@ echo    [7]  Ouvrir le dossier des logs
 echo.
 echo    [8]  Verifier l'environnement (doctor)
 echo    [9]  Installer les outils manquants
+echo   [10]  Ouvrir les logs warnings
 echo.
 echo    [0]  Quitter
 echo.
+echo  =============================================
+echo    Nouveau : Les options [1] et [2] permettent
+echo    de traiter les fichiers existants au demarrage.
 echo  =============================================
 echo.
 set /p "choice=  Votre choix : "
@@ -47,6 +65,7 @@ if "%choice%"=="6" goto open_config
 if "%choice%"=="7" goto open_logs
 if "%choice%"=="8" goto doctor
 if "%choice%"=="9" goto install_tools
+if "%choice%"=="10" goto open_warnings
 if "%choice%"=="0" goto quit
 
 echo.
@@ -80,10 +99,22 @@ if not exist "%WATCH_DIR%" (
 )
 
 echo.
+echo  Options de demarrage :
+echo    [1]  Demarrer (changements uniquement)
+echo    [2]  Demarrer + traiter les fichiers existants
+echo    [3]  Demarrer + traiter les existants (delai 50ms)
+echo.
+set /p "startmode=  Votre choix : "
+
+set "START_OPTS="
+if "%startmode%"=="2" set "START_OPTS=--process-existing"
+if "%startmode%"=="3" set "START_OPTS=--process-existing --process-existing-delay 50"
+
+echo.
 echo  Demarrage du watcher sur : %WATCH_DIR%
 timeout /t 2 >nul
 
-start cmd /k "cd /d "%PROJECT_DIR%" && title Watcher && npx tsx src/index.ts start -d "%WATCH_DIR%""
+start cmd /k "cd /d "%PROJECT_DIR%" && title Watcher && npx tsx src/index.ts start -d "%WATCH_DIR%" %START_OPTS%"
 
 echo  Watcher lance !
 echo.
@@ -98,10 +129,22 @@ echo  --- Lancer sur le dossier du projet ---
 echo.
 echo  Repertoire : %PROJECT_DIR%
 echo.
+echo  Options de demarrage :
+echo    [1]  Demarrer (changements uniquement)
+echo    [2]  Demarrer + traiter les fichiers existants
+echo    [3]  Demarrer + traiter les existants (delai 50ms)
+echo.
+set /p "startmode=  Votre choix : "
+
+set "START_OPTS="
+if "%startmode%"=="2" set "START_OPTS=--process-existing"
+if "%startmode%"=="3" set "START_OPTS=--process-existing --process-existing-delay 50"
+
+echo.
 echo  Demarrage du watcher...
 timeout /t 1 >nul
 
-start cmd /k "cd /d "%PROJECT_DIR%" && title Watcher && npx tsx src/index.ts start -d "%PROJECT_DIR%""
+start cmd /k "cd /d "%PROJECT_DIR%" && title Watcher && npx tsx src/index.ts start -d "%PROJECT_DIR%" %START_OPTS%"
 
 echo  Watcher lance !
 echo.
@@ -267,6 +310,20 @@ if exist "%PROJECT_DIR%\logs" (
     explorer "%PROJECT_DIR%\logs"
 ) else (
     echo  Le dossier logs n'existe pas encore.
+)
+echo.
+pause
+cls
+goto menu
+
+:open_warnings
+cls
+echo.
+if exist "%PROJECT_DIR%\logs\warnings.log" (
+    notepad "%PROJECT_DIR%\logs\warnings.log"
+) else (
+    echo  Aucun fichier warnings.log trouve.
+    echo  Lancez le watcher pour generer des logs.
 )
 echo.
 pause

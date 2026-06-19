@@ -1,5 +1,6 @@
 /**
  * InjectionEngine - Creates/updates consignment files in projects
+ * Uses marker-based merge to preserve existing content.
  */
 
 import fs from "node:fs/promises";
@@ -21,18 +22,8 @@ const DEFAULT_CONFIG: InjectionConfig = {
   projectPatterns: ["**/*.ts", "**/*.js", "**/*.json"],
 };
 
-/**
- * Create a backup of an existing file
- */
-async function createBackup(filePath: string): Promise<string> {
-  const backupPath = `${filePath}.bak`;
-  try {
-    await fs.copyFile(filePath, backupPath);
-    return backupPath;
-  } catch {
-    return "";
-  }
-}
+const WATCHER_SECTION_START = "<!-- watcher-service:start -->";
+const WATCHER_SECTION_END = "<!-- watcher-service:end -->";
 
 /**
  * Ensure the directory for a file exists
@@ -43,14 +34,56 @@ async function ensureDir(filePath: string): Promise<void> {
 }
 
 /**
- * Generate content with version header
+ * Build the managed section (markers + version header + template content).
  */
-function generateContent(templateContent: string, version: string): string {
-  return `<!-- ${getManagedHeader()} v${version} -->\n\n${templateContent}`;
+function buildManagedSection(templateContent: string, version: string): string {
+  const header = `  <!-- ${getManagedHeader()} v${version} -->`;
+  return [
+    WATCHER_SECTION_START,
+    header,
+    "",
+    ...templateContent.split("\n").map((l) => (l ? `  ${l}` : "")),
+    "",
+    WATCHER_SECTION_END,
+  ].join("\n");
 }
 
 /**
- * Inject files into a project based on missing/outdated status
+ * Merge new watcher content into existing file content.
+ *
+ * - File empty / doesn't exist  -> returns full content with markers
+ * - File has markers            -> replaces content BETWEEN markers only
+ * - File has no markers         -> appends markers + content at end
+ */
+function mergeWithExistingContent(
+  existing: string,
+  templateContent: string,
+  version: string
+): string {
+  const section = buildManagedSection(templateContent, version);
+
+  if (!existing.trim()) {
+    return section + "\n";
+  }
+
+  const startIdx = existing.indexOf(WATCHER_SECTION_START);
+  const endIdx = existing.indexOf(WATCHER_SECTION_END);
+
+  if (startIdx !== -1 && endIdx !== -1) {
+    // Replace content between markers
+    const before = existing.slice(0, startIdx);
+    const after = existing.slice(endIdx + WATCHER_SECTION_END.length);
+    return before + section + after;
+  }
+
+  // No markers found -> append at end
+  const trimmed = existing.trimEnd();
+  return trimmed + "\n\n" + section + "\n";
+}
+
+/**
+ * Inject files into a project based on missing/outdated status.
+ * Uses marker merge: existing content is NEVER deleted.
  */
 export async function injectFiles(
   options: InjectionApplyOptions
@@ -68,26 +101,34 @@ export async function injectFiles(
 
   for (const agentStatus of status.agents) {
     const templates = getTemplatesForAgent(agentStatus.agent);
+    const seenFiles = new Set<string>();
 
     for (const template of templates) {
       const filePath = path.join(projectDir, template.fileName);
 
+      if (seenFiles.has(template.fileName)) {
+        continue;
+      }
+      seenFiles.add(template.fileName);
+
+      // Skip up-to-date managed files unless force
       if (agentStatus.present && !agentStatus.outdated && !force) {
         results.push({
           file: template.fileName,
           agent: agentStatus.agent,
           action: "skipped",
-          reason: "Already exists and up to date",
+          reason: "Deja present et a jour",
         });
         continue;
       }
 
+      // Skip outdated managed files unless force
       if (agentStatus.present && agentStatus.outdated && !force) {
         results.push({
           file: template.fileName,
           agent: agentStatus.agent,
           action: "skipped",
-          reason: "Outdated but not forced — skipping",
+          reason: "Version obsolete mais force non active",
         });
         continue;
       }
@@ -97,7 +138,7 @@ export async function injectFiles(
           file: template.fileName,
           agent: agentStatus.agent,
           action: agentStatus.present ? "updated" : "created",
-          reason: "Dry run — no changes made",
+          reason: "Dry run — aucun changement",
         });
         continue;
       }
@@ -105,12 +146,21 @@ export async function injectFiles(
       try {
         await ensureDir(filePath);
 
-        if (agentStatus.present) {
-          await createBackup(filePath);
+        // Read existing content (empty string if file doesn't exist)
+        let existing = "";
+        try {
+          existing = await fs.readFile(filePath, "utf-8");
+        } catch {
+          // file doesn't exist yet
         }
 
-        const content = generateContent(template.content, template.version);
-        await fs.writeFile(filePath, content, "utf-8");
+        const merged = mergeWithExistingContent(
+          existing,
+          template.content,
+          template.version
+        );
+
+        await fs.writeFile(filePath, merged, "utf-8");
 
         results.push({
           file: template.fileName,

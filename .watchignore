@@ -1,0 +1,38 @@
+# .watchignore - Fichiers/dossiers que le watcher ne doit PAS surveiller
+# Syntaxe gitignore : comments (#), noms exacts, suffixes (*.ext), dossiers (dir/)
+#
+# Ces patterns sont en plus des exclusions par defaut :
+# node_modules, .git, dist, build, .cache, .next, .nuxt, coverage, __pycache__
+
+# Dependances
+bower_components
+vendor
+
+# Logs
+*.log
+logs/
+
+# Temporaires
+*.tmp
+*.swp
+*.bak
+*.orig
+~*
+
+# IDE / Editeurs
+.idea/
+.vscode/settings.json
+*.code-workspace
+*.sublime-workspace
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Build artifacts
+*.tsbuildinfo
+.cache/
+
+# Tests
+coverage/
+.nyc_output/

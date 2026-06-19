@@ -319,12 +319,59 @@ This project is monitored by watcher-service. AI-generated code must follow thes
 - \`src/types/\` — type definitions
 `,
 };
+const ESLINT_TS = {
+    id: "eslint-typescript",
+    agent: "eslint",
+    fileName: ".eslintrc.json",
+    version: "1.0.0",
+    description: "ESLint configuration for TypeScript projects",
+    content: JSON.stringify({
+        root: true,
+        env: { node: true, es2021: true },
+        extends: ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
+        parser: "@typescript-eslint/parser",
+        parserOptions: {
+            ecmaVersion: "latest",
+            sourceType: "module",
+        },
+        plugins: ["@typescript-eslint"],
+        rules: {
+            "@typescript-eslint/no-unused-vars": "warn",
+            "@typescript-eslint/no-explicit-any": "warn",
+            "prefer-const": "error",
+            "no-console": "warn",
+        },
+    }, null, 2),
+};
+const ESLINT_JS = {
+    id: "eslint-javascript",
+    agent: "eslint",
+    fileName: ".eslintrc.json",
+    version: "1.0.0",
+    description: "ESLint configuration for JavaScript projects",
+    content: JSON.stringify({
+        root: true,
+        env: { node: true, es2021: true, jest: true },
+        extends: ["eslint:recommended"],
+        parserOptions: {
+            ecmaVersion: "latest",
+            sourceType: "module",
+        },
+        rules: {
+            "no-unused-vars": "warn",
+            "prefer-const": "error",
+            "no-console": "warn",
+        },
+    }, null, 2),
+};
 const ALL_TEMPLATES = [
     CLAUDE_MD,
     AGENTS_MD,
     CURSOR_RULES,
     COPILOT_INSTRUCTIONS,
     WINDSURF_RULES,
+    ESLINT_TS,
+    ESLINT_JS,
 ];
 /**
  * Get all available templates
@@ -356,5 +403,12 @@ export function getFileNameForAgent(agent) {
  */
 export function getManagedHeader() {
     return WATCHER_MANAGED_HEADER;
+}
+/**
+ * Get the ESLint config template for a project.
+ * Auto-detects TypeScript vs JavaScript based on file presence.
+ */
+export function getEslintTemplate(isTypescript) {
+    return isTypescript ? ESLINT_TS : ESLINT_JS;
 }
 //# sourceMappingURL=templates.js.map

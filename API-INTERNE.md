@@ -42,7 +42,7 @@ Le `DetectionEventBus` (extends `EventEmitter`) est le canal central de communic
 ### Flux de donnees
 
 ```
-1. Chokidar detecte changement fichier
+1. fs.watch detecte changement fichier
 2. DetectionModule filtre (extension, patterns, taille, date)
 3. Si le fichier passe le filtre :
    a. emit("fileDetected") ou emit("fileModified")

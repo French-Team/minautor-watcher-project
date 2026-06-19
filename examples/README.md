@@ -5,7 +5,7 @@ Ce dossier contient des exemples complets et prêts à l'emploi pour une exécut
 ## Structure des Exemples
 
 - **[Implémentation Complète](./full-implementation.ts)** : Code intégrant les secteurs Détection, Prévention et Déclencheur.
-- **[Secteur Détection](./detection/)** : Surveillance avec Chokidar.
+- **[Secteur Detection](./detection/)** : Surveillance avec fs.watch natif.
 - **[Secteur Prévention](./prevention/)** : Validations avec ESLint.
 - **[Secteur Déclencheur](./trigger/)** : Corrections automatiques.
 - **[Configuration](./config/)** : Fichiers de config prêts (ESLint, package.json, tsconfig.json).
@@ -21,7 +21,7 @@ Ce dossier contient des exemples complets et prêts à l'emploi pour une exécut
 
 ## Notes sur les Erreurs TypeScript
 
-- Les exemples utilisent des modules comme Chokidar et ESLint. Installez les dépendances pour résoudre les erreurs TypeScript.
+- Les exemples utilisent fs.watch natif et ESLint. Installez les dépendances pour résoudre les erreurs TypeScript.
 - Utilisez `npm i --save-dev @types/node` si nécessaire pour les types Node.js.
 
 Référence : [watcher-setup-guide.md - Structure Modulaire](./../watcher-setup-guide.md).

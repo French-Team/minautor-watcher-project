@@ -29,9 +29,9 @@ Cette liste détaille les exigences fonctionnelles, techniques et opérationnell
 
 ### Technologies et langages
 
-- **Langage principal** : Node.js (pour sa portabilité et ses modules de file watching comme Chokidar).
-- **Bibliothèques clés** :
-  - Chokidar : Pour la surveillance de fichiers en temps réel.
+- **Langage principal** : Node.js (pour sa portabilité et ses modules de file watching comme fs.watch natif).
+- **Bibliotheques cles** :
+  - fs.watch natif : Pour la surveillance de fichiers en temps réel (recursive: true).
   - dotenv : Pour charger les variables d'environnement depuis `.env.local`.
   - Commander.js ou similaire : Pour créer une CLI portable.
   - Winston ou similaire : Pour les logs et notifications.

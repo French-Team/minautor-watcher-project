@@ -68,7 +68,7 @@ export class PreventionModule {
       enabled: true,
       failOnError: true,
       failOnWarning: false,
-      maxExecutionTime: 30000,
+      maxExecutionTime: 10000,
       parallelExecution: true,
       ...config,
     };
@@ -219,11 +219,22 @@ export class PreventionModule {
         );
         for (const scriptResult of scriptResults) {
           if (!scriptResult.success) {
-            result.errors.push({
-              rule: scriptResult.error?.message || "script-failed",
-              message: `Script execution failed: ${scriptResult.stderr}`,
-              severity: "error",
-            });
+            if (scriptResult.toolErrors && scriptResult.toolErrors.length > 0) {
+              // Tool not found (ENOENT) — distinguish from actual lint errors
+              for (const te of scriptResult.toolErrors) {
+                result.errors.push({
+                  rule: `tool-missing:${te.tool}`,
+                  message: te.message,
+                  severity: "error",
+                });
+              }
+            } else {
+              result.errors.push({
+                rule: scriptResult.error?.message || "script-failed",
+                message: `Script execution failed: ${scriptResult.stderr}`,
+                severity: "error",
+              });
+            }
             result.success = false;
           }
         }

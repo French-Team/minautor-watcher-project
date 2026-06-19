@@ -13,10 +13,19 @@ export interface HttpServerDependencies {
 export declare class HealthHttpServer {
     private server;
     private port;
+    private effectivePort;
     private deps;
     constructor(port: number, deps: HttpServerDependencies);
     /**
-     * Start the HTTP server
+     * Get the actual port the server is listening on
+     */
+    getPort(): number;
+    /**
+     * Kill any existing process using the given port (Windows)
+     */
+    private killPortProcess;
+    /**
+     * Start the HTTP server with port fallback
      */
     start(): Promise<void>;
     /**

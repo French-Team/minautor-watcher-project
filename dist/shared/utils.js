@@ -10,7 +10,7 @@ import logger from "./logger.js";
  */
 export function safeExecFile(command, args, options) {
     return new Promise((resolve, reject) => {
-        execFile(command, args, { timeout: options?.timeout ?? 60000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+        execFile(command, args, { timeout: options?.timeout ?? 15000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
             if (error) {
                 reject(error);
             }
@@ -29,10 +29,12 @@ export function safeExecFile(command, args, options) {
  */
 export function safeSpawn(command, args, options) {
     return new Promise((resolve, reject) => {
-        const timeout = options?.timeout ?? 60000;
-        // On Windows, shell: true is needed for .cmd extensions (npx, npm)
+        const timeout = options?.timeout ?? 15000;
+        // On Windows, shell: true is needed for npx/npm/yarn/pnpm (.cmd wrappers)
+        // and for any .cmd/.bat file (spawn cannot execute them directly)
         const isWindows = process.platform === "win32";
-        const needsShell = isWindows && /^(npx|npm|yarn|pnpm)$/i.test(command);
+        const needsShell = isWindows &&
+            (/^(npx|npm|yarn|pnpm)$/i.test(command) || /\.(cmd|bat)$/i.test(command));
         const child = spawn(command, args, {
             cwd: options?.cwd,
             env: options?.env,
@@ -216,6 +218,28 @@ export class Utils {
         return Math.floor(value * (multipliers[unit] || 1));
     }
     /**
+     * Cached stat with TTL to reduce repeated fs.stat calls (V5.5)
+     */
+    static statCache = new Map();
+    static STAT_CACHE_TTL = 5_000;
+    static async statCached(filePath) {
+        const now = Date.now();
+        const cached = Utils.statCache.get(filePath);
+        if (cached && now - cached.timestamp < Utils.STAT_CACHE_TTL) {
+            return cached.stat;
+        }
+        const stat = await fs.stat(filePath);
+        Utils.statCache.set(filePath, { stat, timestamp: now });
+        if (Utils.statCache.size > 500) {
+            const oldest = Utils.statCache.keys().next().value;
+            Utils.statCache.delete(oldest);
+        }
+        return stat;
+    }
+    static clearStatCache() {
+        Utils.statCache.clear();
+    }
+    /**
      * Validate configuration object against schema
      */
     static validateConfig(config, schema) {
@@ -251,7 +275,7 @@ export const ConfigSchemas = {
         autoCorrect: Joi.object({
             enabled: Joi.boolean().default(true),
             maxFileSize: Joi.string().default("1MB"),
-            timeout: Joi.number().default(30000),
+            timeout: Joi.number().default(15000),
         }),
         corrections: Joi.array().items(Joi.object({
             ruleId: Joi.string().required(),

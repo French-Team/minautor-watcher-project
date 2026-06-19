@@ -266,7 +266,7 @@ export class PreventionConfigManager {
       globalSettings: {
         failOnError: true,
         failOnWarning: false,
-        maxExecutionTime: 30000,
+        maxExecutionTime: 10000,
         parallelExecution: true,
       },
     };
@@ -336,7 +336,7 @@ export class PreventionConfigManager {
 
       if (rule.conditions?.minFileSize || rule.conditions?.maxFileSize) {
         try {
-          const stats = await fs.stat(filePath);
+          const stats = await Utils.statCached(filePath);
           const fileSize = stats.size;
 
           if (

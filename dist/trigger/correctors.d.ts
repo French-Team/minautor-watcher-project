@@ -148,7 +148,7 @@ export declare class CorrectorRegistry {
      */
     getApplicableCorrectors(filePath: string, error?: unknown): BaseCorrector[];
     /**
-     * Apply corrections to a file
+     * Apply corrections to a file (V5.6: parallel execution)
      */
     applyCorrections(filePath: string, error?: unknown, dryRun?: boolean): Promise<CorrectionResult[]>;
     /**

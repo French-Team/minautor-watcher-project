@@ -49,6 +49,8 @@ export class WatcherCLI {
             .option("-d, --dir <directory>", "Directory to watch", process.env.WATCH_DIR || process.cwd())
             .option("--no-prevention", "Disable prevention module")
             .option("--no-trigger", "Disable trigger module")
+            .option("--process-existing", "Process existing files at startup (emit FILE_ADDED for each)")
+            .option("--process-existing-delay <ms>", "Delay between each existing file event (default: 10ms)", "10")
             .action(async (options) => {
             try {
                 console.log(chalk.blue("▶") + " Starting Watcher Service...");
@@ -56,6 +58,8 @@ export class WatcherCLI {
                     watchDir: options.dir,
                     enablePrevention: options.prevention,
                     enableTrigger: options.trigger,
+                    processExisting: options.processExisting,
+                    processExistingDelay: parseInt(options.processExistingDelay),
                 });
                 await this.service.initialize();
                 await this.service.start();

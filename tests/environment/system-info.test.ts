@@ -1,4 +1,7 @@
-import { getSystemInfo, formatSystemInfo } from "../../src/environment/system-info.js";
+import {
+  getSystemInfo,
+  formatSystemInfo,
+} from "../../src/environment/system-info.js";
 import { CURRENT_YEAR } from "../../src/environment/types.js";
 
 describe("SystemInfo", () => {

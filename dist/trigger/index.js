@@ -20,7 +20,7 @@ export class TriggerModule {
             enabled: true,
             autoCorrect: true,
             notifyOnFailure: true,
-            maxExecutionTime: 30000,
+            maxExecutionTime: 10000,
             parallelExecution: true,
             ...config,
         };
@@ -105,33 +105,40 @@ export class TriggerModule {
         }
     }
     /**
-     * Execute multiple trigger rules
+     * Execute multiple trigger rules (V5.6: parallel execution)
      */
     async executeRules(rules, context) {
-        const results = [];
-        for (const rule of rules) {
+        const results = await Promise.allSettled(rules.map(async (rule) => {
             try {
                 const result = await this.executeRule(rule, context);
-                results.push(result);
                 if (result.success) {
                     logger.success(`Trigger rule ${rule.id} executed successfully`);
                 }
                 else {
                     logger.warn(`Trigger rule ${rule.id} failed`);
                 }
+                return result;
             }
             catch (error) {
                 logger.error(`Error executing trigger rule ${rule.id}:`, error);
-                results.push({
+                return {
                     ruleId: rule.id,
                     success: false,
                     actions: [],
                     executionTime: 0,
                     error: error instanceof Error ? error : new Error(String(error)),
-                });
+                };
             }
-        }
-        return results;
+        }));
+        return results.map((result) => result.status === "fulfilled"
+            ? result.value
+            : {
+                ruleId: "unknown",
+                success: false,
+                actions: [],
+                executionTime: 0,
+                error: result.reason,
+            });
     }
     /**
      * Execute a single trigger rule
@@ -330,7 +337,7 @@ export class TriggerModule {
         try {
             // Check skip conditions
             if (action.config?.maxFileSize) {
-                const stats = await Utils.fs.stat(context.filePath);
+                const stats = await Utils.statCached(context.filePath);
                 const maxSizeBytes = Utils.parseFileSize(String(action.config.maxFileSize));
                 if (stats.size > maxSizeBytes) {
                     logger.info(`Skipping file ${context.filePath} due to size limit`);
@@ -395,7 +402,7 @@ export class TriggerModule {
                     .replace(/\{\{filePath\}\}/g, context.filePath)
                     .replace(/\{\{eventType\}\}/g, context.eventType));
                 logger.info(`Executing whitelisted script: ${cmd} ${args.join(" ")}`);
-                const { stdout } = await safeSpawn(cmd, args, { timeout: 30000 });
+                const { stdout } = await safeSpawn(cmd, args, { timeout: 15000 });
                 return { type: "custom", success: true, result: stdout.trim() };
             }
             throw new Error("Custom action requires a config.handler function or config.script command");

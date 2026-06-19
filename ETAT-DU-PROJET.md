@@ -1,19 +1,21 @@
 # Etat du Projet - Watcher Service
 
-> Derniere mise a jour : 14 juin 2026
+> Derniere mise a jour : 15 juin 2026
 
 ## Vision generale
 
-Le watcher service est un pipeline a 4 modules qui surveille un dossier, valide les fichiers modifies, applique des corrections automatiques, injecte des fichiers de consignes pour les agents IA, et envoie des notifications.
+Le watcher service est un pipeline a 5 modules qui surveille un dossier, valide les fichiers modifies via des chaines sequentielles, applique des corrections automatiques, injecte des fichiers de consignes pour les agents IA, et envoie des notifications.
 
 ```
-Chokidar (surveillance)
-  -> Detection (filtrage + debounce)
-    -> Prevention (validation + scripts + injection ESLint)
-      -> Trigger (corrections + notifications)
+fs.watch natif (surveillance, 1 handle Windows)
+  -> Detection (filtrage + debounce + .watchignore)
+    -> Processor (N chaines sequentielles)
+      -> Prevention (validation + scripts + injection ESLint)
+        -> Trigger (corrections + notifications)
 
   -> Injection (fichiers consignes agents IA)
-  -> Environment (V4 : banner, doctor, outils)
+  -> Environment (banner, doctor, outils)
+  -> Monitor (CPU/memoire/heap toutes les 5s)
 ```
 
 ---
@@ -24,10 +26,27 @@ Chokidar (surveillance)
 
 | Composant | Statut | Details |
 |-----------|--------|---------|
-| `watcher.ts` | Fonctionnel | Chokidar configure, debouncing, filtrage par extension |
+| `watcher.ts` | Fonctionnel | `fs.watch` natif (`recursive: true`), 1 seul handle Windows, debouncing, filtrage extension, `.watchignore` |
 | `events.ts` | Fonctionnel | EventBus typé avec 10 types d'evenements |
 | `filters.ts` | Fonctionnel | 5 types de filtres (extension, patterns, taille, date) + presets |
 | `index.ts` | Fonctionnel | Orchestre Watcher + Filter + EventBus, rechargement config |
+
+**Watcher natif** : `fs.watch(dir, { recursive: true })` utilise un seul handle `ReadDirectoryChangesW` au lieu de milliers de watchers par sous-dossier (Chokidar). CPU ~0% au repos.
+
+**Fichier `.watchignore`** : Syntaxe gitignore pour exclure des fichiers/dossiers. Les exclusions par defaut (`node_modules`, `.git`, `dist`, `build`, `.cache`, `.next`, `.nuxt`, `coverage`, `__pycache__`) sont toujours actives.
+
+**Scan initial** : `scanInitialFiles()` compte les fichiers existants sans emettre d'evenements. Le pipeline ne demarre que pour les vrais changements fs.watch.
+
+### 1b. Processor (chaines de traitement) - COMPLET
+
+| Composant | Statut | Details |
+|-----------|--------|---------|
+| `processing-chain.ts` | Fonctionnel | File d'attente + traitement sequentiel par fichier : prevent -> correct -> re-prevent -> suivant |
+| `chain-orchestrator.ts` | Fonctionnel | N chaines (defaut 5), distribution au moins charge |
+
+**Principe** : Chaque chaine traite **un fichier de bout en bout** avant de passer au suivant. `setImmediate` cede l'event loop entre chaque fichier. Le CPU n'est plus sature.
+
+**Config** : `CHAIN_COUNT=5` (variable d'env, defaut 5 chaines).
 
 ### 2. Prevention (validation et scripts) - COMPLET
 
@@ -84,6 +103,14 @@ Chokidar (surveillance)
 **Banner compact** : `scripts/env-banner.cjs` — GPU VRAM via registry `qwMemorySize` (QWORD), reseau via `netsh`+`ipconfig`, RAM used/total %
 
 **Installer dynamique** : `scripts/install-tools.cjs` — detecte + installe automatiquement les outils manquants via npm
+
+### 7. Monitor (surveillance systeme) - COMPLET
+
+| Composant | Statut | Details |
+|-----------|--------|---------|
+| `resource-monitor.ts` | Fonctionnel | CPU/memoire/heap toutes les 5s, alertes a 70%/90%, `timer.unref()` |
+
+**Alertes** : CPU > 70% (warn), CPU > 90% (error), memoire > 80% (warn). Logs structures avec metriques en temps reel.
 
 ---
 
@@ -157,9 +184,12 @@ Chokidar (surveillance)
 | `tests/shared/circuit-breaker.test.ts` | 11 | Circuit breaker, retryWithBackoff |
 | `tests/shared/unified-config.test.ts` | 4 | Configuration unifiee |
 | `tests/detection/filters.test.ts` | 12 | Filtres, presets, patterns |
-| `tests/prevention/validators.test.ts` | 11 | JSON, Pattern validators, registry |
+| `tests/detection/events.test.ts` | 13 | DetectionEventBus, trackListener, cleanupAllListeners |
+| `tests/detection/watcher.test.ts` | 12 | Watcher lifecycle, ignoreInitial, debouncing, extensions |
+| `tests/prevention/validators.test.ts` | 17 | JSON, Pattern, ESLint validators, injection config |
 | `tests/prevention/config.test.ts` | 14 | PreventionConfigManager, CRUD, reload |
-| `tests/trigger/correctors.test.ts` | 9 | CorrectorRegistry, TextReplacementCorrector |
+| `tests/prevention/scripts.test.ts` | 27 | ScriptRunner, $FILE token, concurrency limiter, runWithLimit |
+| `tests/trigger/correctors.test.ts` | 31 | TextReplacement, Command, ESLintFix, PrettierFormat, parallel apply |
 | `tests/trigger/rules.test.ts` | 15 | TriggerRuleManager, CRUD, toggle |
 | `tests/trigger/notifiers.test.ts` | 13 | Console, File notifiers, registry |
 | `tests/server/http.test.ts` | 8 | Health check, ready, metrics, 503 |
@@ -169,8 +199,10 @@ Chokidar (surveillance)
 | `tests/environment/tool-detector.test.ts` | 4 | ToolDetector, detection, cache |
 | `tests/environment/dev-environment.test.ts` | 4 | DevEnvironment, IDE, shell |
 | `tests/environment/env-reporter.test.ts` | 4 | EnvReporter, banner |
+| `tests/processor/processor.test.ts` | 8 | ProcessingChain, ChainOrchestrator |
+| `tests/monitor/resource-monitor.test.ts` | 6 | ResourceMonitor, CPU/memoire/heap |
 | `tests/integration/pipeline.test.ts` | 10 | Pipeline complet, drain, dry-run, rollback |
-| **Total** | **244** | **17 suites** |
+| **Total** | **335** | **22 suites** |
 
 ---
 

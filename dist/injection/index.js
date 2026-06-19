@@ -5,7 +5,7 @@
  * and injects them into projects so AI agents follow consistent rules.
  */
 // Templates
-export { getAllTemplates, getTemplatesForAgent, getTemplateById, getFileNameForAgent, getManagedHeader, } from "./templates.js";
+export { getAllTemplates, getTemplatesForAgent, getTemplateById, getFileNameForAgent, getManagedHeader, getEslintTemplate, } from "./templates.js";
 // Detection
 export { checkInjectionStatus, formatCheckResult } from "./detector.js";
 // Injection

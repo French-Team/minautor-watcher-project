@@ -1,4 +1,6 @@
 import { spawn } from "child_process";
+import path from "path";
+import fs from "fs-extra";
 import { Utils } from "../shared/utils.js";
 import { createChildLogger } from "../shared/logger.js";
 const logger = createChildLogger("prevention-scripts");
@@ -8,6 +10,32 @@ const logger = createChildLogger("prevention-scripts");
 export class ScriptRunner {
     scripts = new Map();
     runningScripts = new Map();
+    concurrencyLimit = 2;
+    /**
+     * Run tasks with concurrency limit
+     */
+    async runWithLimit(tasks, limit) {
+        const results = [];
+        const executing = new Set();
+        for (const task of tasks) {
+            const p = task()
+                .then((result) => {
+                results.push({ status: "fulfilled", value: result });
+            })
+                .catch((reason) => {
+                results.push({ status: "rejected", reason });
+            })
+                .then(() => {
+                executing.delete(p);
+            });
+            executing.add(p);
+            if (executing.size >= limit) {
+                await Promise.race(executing);
+            }
+        }
+        await Promise.all(executing);
+        return results;
+    }
     /**
      * Add a script to the runner
      */
@@ -38,11 +66,18 @@ export class ScriptRunner {
     /**
      * Execute a script by name
      */
-    async executeScript(name, options) {
-        const script = this.scripts.get(name);
-        if (!script) {
+    async executeScript(name, options, filePath) {
+        const originalScript = this.scripts.get(name);
+        if (!originalScript) {
             throw new Error(`Script not found: ${name}`);
         }
+        // Replace $FILE token in args with actual file path
+        const script = filePath && originalScript.args
+            ? {
+                ...originalScript,
+                args: originalScript.args.map((arg) => arg.replace(/\$FILE/g, filePath)),
+            }
+            : originalScript;
         const startTime = Date.now();
         const abortController = new AbortController();
         this.runningScripts.set(name, abortController);
@@ -92,7 +127,20 @@ export class ScriptRunner {
             return [];
         }
         logger.info(`Executing ${applicableScripts.length} scripts for file: ${filePath}`);
-        const results = await Promise.allSettled(applicableScripts.map((script) => this.executeScript(script.name)));
+        // Run scripts from the file's directory so npx/npm resolve the project's local tools
+        // Fall back to process.cwd() if the file directory doesn't exist
+        const fileDir = path.dirname(filePath);
+        let scriptCwd = fileDir;
+        try {
+            if (!(await fs.pathExists(fileDir))) {
+                scriptCwd = process.cwd();
+            }
+        }
+        catch {
+            scriptCwd = process.cwd();
+        }
+        const scriptOptions = { cwd: scriptCwd };
+        const results = await this.runWithLimit(applicableScripts.map((script) => () => this.executeScript(script.name, scriptOptions, filePath)), this.concurrencyLimit);
         return results.map((result, index) => {
             if (result.status === "fulfilled") {
                 return result.value;
@@ -161,11 +209,17 @@ export class ScriptRunner {
             const cwd = options?.cwd || script.cwd || process.cwd();
             const env = { ...process.env, ...script.env, ...options?.env };
             logger.debug(`Executing command: ${command} ${args.join(" ")} in ${cwd}`);
+            // On Windows, shell: true is needed for npx/npm/yarn/pnpm (.cmd wrappers)
+            // and for any .cmd/.bat file (spawn cannot execute them directly)
+            const isWindows = process.platform === "win32";
+            const needsShell = isWindows &&
+                (/^(npx|npm|yarn|pnpm)$/i.test(command) || /\.(cmd|bat)$/i.test(command));
             const child = spawn(command, args, {
                 cwd,
                 env,
                 stdio: options?.captureOutput ? "pipe" : "inherit",
                 signal,
+                shell: needsShell,
             });
             let stdout = "";
             let stderr = "";
@@ -177,7 +231,7 @@ export class ScriptRunner {
                     stderr += data.toString();
                 });
             }
-            const timeout = options?.timeout || script.timeout || 30000;
+            const timeout = options?.timeout || script.timeout || 15000;
             const timer = setTimeout(() => {
                 child.kill("SIGTERM");
                 setTimeout(() => {
@@ -206,6 +260,9 @@ export class ScriptRunner {
             });
             child.on("error", (error) => {
                 clearTimeout(timer);
+                const toolErrors = error.code === "ENOENT"
+                    ? [{ tool: command, message: `${command} not found — tool may not be installed in the target project` }]
+                    : undefined;
                 resolve({
                     success: false,
                     stdout,
@@ -213,6 +270,7 @@ export class ScriptRunner {
                     exitCode: -1,
                     executionTime: 0,
                     error,
+                    toolErrors,
                 });
             });
             // Handle abort signal
@@ -236,65 +294,66 @@ export class ScriptRunner {
  */
 export const PredefinedScripts = {
     /**
-     * ESLint with auto-fix
+     * ESLint with auto-fix (targets specific file, not entire project)
      */
     eslintFix: (config) => ({
         name: "eslint-fix",
         command: "npx",
-        args: ["eslint", "--fix", "."],
+        args: ["eslint", "--fix", "$FILE"],
         enabled: true,
-        description: "Run ESLint with auto-fix on the project",
-        timeout: 60000,
+        description: "Run ESLint with auto-fix on the changed file",
+        timeout: 15000,
+        triggers: [".js", ".ts", ".jsx", ".tsx"],
         ...config,
     }),
     /**
-     * Prettier formatting
+     * Prettier formatting (targets specific file)
      */
     prettierFormat: (config) => ({
         name: "prettier-format",
         command: "npx",
-        args: ["prettier", "--write", "."],
+        args: ["prettier", "--write", "$FILE"],
         enabled: true,
         description: "Format code with Prettier",
-        timeout: 30000,
+        timeout: 10000,
         triggers: [".js", ".ts", ".jsx", ".tsx", ".json", ".md"],
         ...config,
     }),
     /**
-     * TypeScript type checking
+     * TypeScript type checking (project-wide, cannot target single file)
      */
     typescriptCheck: (config) => ({
         name: "typescript-check",
         command: "npx",
         args: ["tsc", "--noEmit"],
-        enabled: true,
-        description: "Run TypeScript type checking",
-        timeout: 30000,
+        enabled: false,
+        description: "Run TypeScript type checking (disabled by default — project-wide, not per-file)",
+        timeout: 15000,
         triggers: [".ts", ".tsx"],
         ...config,
     }),
     /**
-     * Security audit
+     * Security audit (disabled by default - too heavy for file watcher)
      */
     securityAudit: (config) => ({
         name: "security-audit",
         command: "npm",
         args: ["audit"],
-        enabled: true,
-        description: "Run npm security audit",
-        timeout: 60000,
+        enabled: false,
+        description: "Run npm security audit (disabled by default)",
+        timeout: 15000,
         ...config,
     }),
     /**
-     * Dependency vulnerability check
+     * Dependency check (disabled by default - too heavy for file watcher)
      */
     dependencyCheck: (config) => ({
         name: "dependency-check",
         command: "npx",
         args: ["depcheck"],
-        enabled: true,
-        description: "Check for unused dependencies",
-        timeout: 30000,
+        enabled: false,
+        description: "Check for unused dependencies (disabled by default)",
+        timeout: 15000,
         ...config,
     }),
 };

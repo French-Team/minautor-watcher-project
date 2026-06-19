@@ -1,8 +1,32 @@
 import http from "http";
 import { createChildLogger } from "../shared/logger.js";
+import { execSync } from "child_process";
 import type { ServiceStatus, ServiceMetrics } from "../types/common.js";
 
 const logger = createChildLogger("http-server");
+
+/**
+ * Find an available port starting from startPort, trying up to 10 ports
+ */
+function findAvailablePort(startPort: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const tryPort = (port: number, maxAttempts: number) => {
+      if (port > startPort + maxAttempts) {
+        reject(new Error(`No available port found in range ${startPort}-${startPort + maxAttempts}`));
+        return;
+      }
+      const server = http.createServer();
+      server.on("error", () => {
+        server.close(() => tryPort(port + 1, maxAttempts));
+      });
+      server.listen(port, () => {
+        const effectivePort = (server.address() as import("net").AddressInfo).port;
+        server.close(() => resolve(effectivePort));
+      });
+    };
+    tryPort(startPort, 10);
+  });
+}
 
 /**
  * Dependencies injected into the HTTP server
@@ -19,6 +43,7 @@ export interface HttpServerDependencies {
 export class HealthHttpServer {
   private server: http.Server | null = null;
   private port: number;
+  private effectivePort: number = 0;
   private deps: HttpServerDependencies;
 
   constructor(port: number, deps: HttpServerDependencies) {
@@ -27,37 +52,84 @@ export class HealthHttpServer {
   }
 
   /**
-   * Start the HTTP server
+   * Get the actual port the server is listening on
    */
-  start(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const handler = (
-        req: http.IncomingMessage,
-        res: http.ServerResponse
-      ): void => {
-        const url = req.url || "/";
+  getPort(): number {
+    return this.effectivePort;
+  }
 
-        if (req.method === "GET" && url === "/health") {
-          this.handleHealth(res);
-        } else if (req.method === "GET" && url === "/ready") {
-          this.handleReady(res);
-        } else if (req.method === "GET" && url === "/metrics") {
-          this.handleMetrics(res);
-        } else {
-          res.writeHead(404, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Not found" }));
+  /**
+   * Kill any existing process using the given port (Windows)
+   */
+  private killPortProcess(port: number): void {
+    try {
+      const result = execSync(
+        `netstat -ano | findstr :${port} | findstr LISTENING`,
+        { encoding: "utf-8", timeout: 3000 }
+      ).trim();
+      if (result) {
+        const pid = result.split(/\s+/).pop();
+        if (pid && pid !== "0") {
+          execSync(`taskkill /F /PID ${pid}`, {
+            encoding: "utf-8",
+            timeout: 3000,
+          });
+          logger.info(`Killed old process on port ${port} (PID: ${pid})`);
         }
-      };
+      }
+    } catch {
+      // No process found or kill failed — port is free
+    }
+  }
 
+  /**
+   * Start the HTTP server with port fallback
+   */
+  async start(): Promise<void> {
+    const handler = (
+      req: http.IncomingMessage,
+      res: http.ServerResponse
+    ): void => {
+      const url = req.url || "/";
+
+      if (req.method === "GET" && url === "/health") {
+        this.handleHealth(res);
+      } else if (req.method === "GET" && url === "/ready") {
+        this.handleReady(res);
+      } else if (req.method === "GET" && url === "/metrics") {
+        this.handleMetrics(res);
+      } else {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Not found" }));
+      }
+    };
+
+    const availablePort = await findAvailablePort(this.port);
+    this.effectivePort = availablePort;
+
+    return new Promise((resolve, reject) => {
       this.server = http.createServer(handler);
 
-      this.server.on("error", (err) => {
-        logger.error(`HTTP server error: ${err.message}`);
-        reject(err);
+      this.server.on("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "EADDRINUSE") {
+          logger.warn(
+            `Port ${availablePort} in use, killing old process and retrying...`
+          );
+          this.killPortProcess(availablePort);
+          setTimeout(() => {
+            this.server!.listen(availablePort, () => {
+              logger.info(`Health check server listening on port ${availablePort}`);
+              resolve();
+            });
+          }, 500);
+        } else {
+          logger.error(`HTTP server error: ${err.message}`);
+          reject(err);
+        }
       });
 
-      this.server.listen(this.port, () => {
-        logger.info(`Health check server listening on port ${this.port}`);
+      this.server.listen(availablePort, () => {
+        logger.info(`Health check server listening on port ${this.effectivePort}`);
         resolve();
       });
     });

@@ -70,7 +70,7 @@ Objectif : Completer les fonctionnalites partiellement implementees.
 
 **Fichier** : `src/index.ts` (methode `setupModuleCommunication`)
 
-Le probleme : Seuls `fileDetected` et `fileModified` sont forwards aux modules Prevention et Trigger. Les suppressions de fichiers sont detectees par Chokidar mais jamais traitees.
+Le probleme : Seuls `fileDetected` et `fileModified` sont forwards aux modules Prevention et Trigger. Les suppressions de fichiers sont detectees par fs.watch mais jamais traitees.
 
 **Solution** : Ajouter un listener pour `fileDeleted` qui emet un evenement dans le TriggerModule avec le type "fileDeleted".
 

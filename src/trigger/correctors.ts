@@ -10,10 +10,12 @@ const logger = createChildLogger("trigger-correctors");
  * Prevents concurrent writes from ESLint and Prettier on the same file.
  */
 const fileLocks = new Map<string, Promise<void>>();
+const LOCK_TTL_MS = 30_000;
 
 /**
  * Execute a function while holding a file lock.
  * Serializes writes to the same file to prevent race conditions.
+ * Auto-releases after 30s if holder crashes.
  */
 async function withFileLock<T>(
   filePath: string,
@@ -32,9 +34,19 @@ async function withFileLock<T>(
   });
   fileLocks.set(filePath, current);
 
+  // Safety TTL: auto-release if holder hangs
+  const timer = setTimeout(() => {
+    if (fileLocks.get(filePath) === current) {
+      release();
+      fileLocks.delete(filePath);
+    }
+  }, LOCK_TTL_MS);
+  timer.unref();
+
   try {
     return await fn();
   } finally {
+    clearTimeout(timer);
     release();
     // Clean up if we're still the holder
     if (fileLocks.get(filePath) === current) {
@@ -639,7 +651,7 @@ export class ESLintFixCorrector extends BaseCorrector {
           "eslint",
           "--fix",
           filePath,
-        ]);
+        ], { cwd: path.dirname(filePath) });
 
         result.corrected = !stderr || !stderr.includes("error");
         result.success = true;
@@ -699,11 +711,12 @@ export class ESLintFixCorrector extends BaseCorrector {
       for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
         const batch = filePaths.slice(i, i + BATCH_SIZE);
 
+        const batchCwd = path.dirname(batch[0]);
         const { stderr } = await safeSpawn("npx", [
           "eslint",
           "--fix",
           ...batch,
-        ]);
+        ], { cwd: batchCwd });
 
         const hasError = stderr && stderr.includes("error");
 
@@ -797,7 +810,7 @@ export class PrettierFormatCorrector extends BaseCorrector {
           "prettier",
           "--write",
           filePath,
-        ]);
+        ], { cwd: path.dirname(filePath) });
 
         result.corrected = true;
         result.success = true;
@@ -855,7 +868,8 @@ export class PrettierFormatCorrector extends BaseCorrector {
       for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
         const batch = filePaths.slice(i, i + BATCH_SIZE);
 
-        await safeSpawn("npx", ["prettier", "--write", ...batch]);
+        const batchCwd = path.dirname(batch[0]);
+        await safeSpawn("npx", ["prettier", "--write", ...batch], { cwd: batchCwd });
 
         for (const filePath of batch) {
           const result: CorrectionResult = {
@@ -940,7 +954,7 @@ export class CorrectorRegistry {
   }
 
   /**
-   * Apply corrections to a file
+   * Apply corrections to a file (V5.6: parallel execution)
    */
   async applyCorrections(
     filePath: string,
@@ -948,7 +962,6 @@ export class CorrectorRegistry {
     dryRun = false
   ): Promise<CorrectionResult[]> {
     const applicableCorrectors = this.getApplicableCorrectors(filePath, error);
-    const results: CorrectionResult[] = [];
 
     logger.info(
       `Applying ${applicableCorrectors.length} correctors to ${filePath}${
@@ -956,32 +969,49 @@ export class CorrectorRegistry {
       }`
     );
 
-    for (const corrector of applicableCorrectors) {
-      try {
-        const result = await corrector.applyCorrection(filePath, error, dryRun);
-        results.push(result);
-
-        if (result.corrected) {
-          logger.info(
-            `Corrector ${corrector.getName()} successfully corrected ${filePath}`
+    const results = await Promise.allSettled(
+      applicableCorrectors.map(async (corrector) => {
+        try {
+          const result = await corrector.applyCorrection(
+            filePath,
+            error,
+            dryRun
           );
-        }
-      } catch (error) {
-        logger.error(
-          `Corrector ${corrector.getName()} failed for ${filePath}:`,
-          error
-        );
-        results.push({
-          success: false,
-          corrected: false,
-          changes: [],
-          executionTime: 0,
-          error: error instanceof Error ? error : new Error(String(error)),
-        });
-      }
-    }
 
-    return results;
+          if (result.corrected) {
+            logger.info(
+              `Corrector ${corrector.getName()} successfully corrected ${filePath}`
+            );
+          }
+
+          return result;
+        } catch (error) {
+          logger.error(
+            `Corrector ${corrector.getName()} failed for ${filePath}:`,
+            error
+          );
+          return {
+            success: false,
+            corrected: false,
+            changes: [],
+            executionTime: 0,
+            error: error instanceof Error ? error : new Error(String(error)),
+          };
+        }
+      })
+    );
+
+    return results.map((result) =>
+      result.status === "fulfilled"
+        ? result.value
+        : {
+            success: false,
+            corrected: false,
+            changes: [],
+            executionTime: 0,
+            error: result.reason,
+          }
+    );
   }
 
   /**

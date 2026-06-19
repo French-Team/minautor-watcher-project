@@ -1,11 +1,15 @@
+# ⚡ Minautor Watcher Project ⚡
+
 <p align="center">
-  <img src="./assets/logo-minautor.png" alt="Logo Minautor" width="600" />
+  <img src="./assets/logo-minautor.png" alt="Logo Minautor" width="800" />
 </p>
-# minautor watcher project
 
-Un service de surveillance de code modulaire, automatisé et portable. Détecte les changements en temps réel, prévient les erreurs avant propagation, corrige automatiquement — et **injecte des fichiers de consignes pour guider les agents IA**.
+## Un service de surveillance de code modulaire, automatisé et portable. 
+Détecte les changements en temps réel, prévient les erreurs avant propagation, corrige automatiquement — et **injecte des fichiers de consignes pour guider les agents IA**.
 
-Le watcher résout un problème concret : les agents IA laissent des erreurs partout dans les projets. Le watcher les détecte, les corrige, et **injecte des fichiers CLAUDE.md / AGENTS.md** pour que tous les agents suivent les mêmes directives.
+### Le watcher résout un problème concret : 
+les agents IA laissent des erreurs partout dans les projets. 
+Le watcher les détecte, les corrige, et **injecte des fichiers CLAUDE.md / AGENTS.md** pour que tous les agents suivent les mêmes directives.
 
 ---
 
@@ -20,6 +24,8 @@ Le watcher résout un problème concret : les agents IA laissent des erreurs par
   - [Injection](#injection) *(V3)*
   - [Analysis](#analysis) *(V3)*
   - [Environment](#environment-v4) *(V4)*
+  - [Processor](#processor-v5) *(V5)*
+  - [Monitor](#monitor-v5) *(V5)*
 - [Sécurité et stabilité (V2)](#sécurité-et-stabilité-v2)
 - [Configuration](#configuration)
 - [CLI](#cli)
@@ -52,7 +58,7 @@ L'objectif n'est pas de remplacer les outils existants, mais de les **orchestrer
 ├────────────┬──────────────┬──────────────────┬───────────┬───────────┤
 │ Detection  │  Prevention  │     Trigger      │ Injection │Environment│
 │            │              │                  │   (V3)    │   (V4)    │
-│ chokidar   │  validateurs │  correcteurs     │ templates │ sysinfo   │
+│ fs.watch    │  validateurs │  correcteurs     │ templates │ sysinfo   │
 │ filters    │  scripts     │  notifieurs      │ detector  │ tools     │
 │ events     │  config      │  rules engine    │ injector  │ banner    │
 │            │  ESLint auto │                  │ ESLint cfg│ doctor    │
@@ -81,7 +87,7 @@ Surveille le système de fichiers et filtre les événements pertinents.
 
 | Classe / Fichier    | Rôle                                                                 |
 | ------------------- | -------------------------------------------------------------------- |
-| `Watcher`           | Interface avec Chokidar, émet des événements bruts                   |
+| `Watcher`           | Interface avec `fs.watch` natif (`recursive: true`), un seul handle Windows |
 | `FileFilter`        | Filtre par extension, pattern, taille, date de modification          |
 | `DetectionEventBus` | Bus d'événements typé, relaye les événements filtrés                 |
 | `FilterPresets`     | Presets prêts à l'emploi (`jsTsProject`, `minimal`, `comprehensive`) |
@@ -104,6 +110,20 @@ DETECTION_ERROR  → erreur du watcher
 | `includePatterns`             | Patterns glob à inclure                             |
 | `maxFileSize` / `minFileSize` | Taille en bytes                                     |
 | `modifiedWithin`              | Délai max depuis la dernière modification (ms)      |
+
+**Fichier `.watchignore` :**
+
+Le watcher supporte un fichier `.watchignore` (syntaxe gitignore) pour exclure des fichiers/dossiers de la surveillance.
+
+```gitignore
+# Commentaires
+node_modules        # nom exact
+*.log               # suffixe
+dist/               # dossier
+temp*               # prefixe
+```
+
+Les exclusions par défaut s'appliquent toujours : `node_modules`, `.git`, `dist`, `build`, `.cache`, `.next`, `.nuxt`, `coverage`, `__pycache__`.
 
 ---
 
@@ -357,6 +377,56 @@ printCompactBanner(report); // Une ligne
 
 ---
 
+### Processor (V5) — Chaines de traitement sequentielles
+
+Le module Processor gere N chaines de traitement paralleles (defaut 5, configurable via `CHAIN_COUNT`). Chaque chaine traite **un fichier de bout en bout** avant de passer au suivant.
+
+**Fichiers :** `src/processor/`
+
+| Composant | Role |
+|-----------|------|
+| `ProcessingChain` | File d'attente + traitement sequentiel : prevent -> correct -> re-prevent -> suivant |
+| `ChainOrchestrator` | N chaines, distribution au moins charge, metriques temps reel |
+
+**Avantages** : Pas de saturation CPU (setImmediate yield), parallelisme borne, monitoring temps reel.
+
+```typescript
+import { ChainOrchestrator } from "./processor/index.js";
+
+const orchestrator = new ChainOrchestrator(5);
+orchestrator.onComplete((result) => {
+  console.log(`${result.file}: ${result.success ? "OK" : "FAIL"}`);
+});
+orchestrator.enqueue({ filePath: "src/index.ts", type: "file_added" });
+orchestrator.getStats(); // { chains: 5, queued: 0, busy: 2 }
+```
+
+---
+
+### Monitor (V5) — Surveillance systeme
+
+Le module Monitor surveille CPU, memoire et heap toutes les 5 secondes avec alertes configurables.
+
+**Fichiers :** `src/monitor/`
+
+| Composant | Role |
+|-----------|------|
+| `ResourceMonitor` | CPU/memoire/heap, alertes a 70%/90%, `timer.unref()` pour arret propre |
+
+**Alertes** : CPU > 70% (warn), CPU > 90% (error), memoire > 80% (warn).
+
+```typescript
+import { ResourceMonitor } from "./monitor/index.js";
+
+const monitor = new ResourceMonitor({ cpuWarn: 70, cpuError: 90, memWarn: 80 });
+monitor.onAlert((alert) => console.warn(alert));
+monitor.start(); // Surveillance toutes les 5s
+// ...
+monitor.stop(); // Arret propre (timer.unref())
+```
+
+---
+
 ## Sécurité et stabilité (V2)
 
 Le watcher intègre un ensemble de protections issues de V2 :
@@ -381,6 +451,9 @@ Le watcher intègre un ensemble de protections issues de V2 :
 | Signal handlers               | `SIGINT`/`SIGTERM` (shutdown), `SIGUSR1` (reload), `SIGUSR2` (restart) |
 | Injection auto ESLint         | Config `.eslintrc.json` injectée si manquante                          |
 | Skip notifications            | Slack/Email skip si credentials manquants (warn, pas error)            |
+| Processor chains (V5)         | N chaînes séquentielles (CHAIN_COUNT=5), bounded parallelism           |
+| Resource monitor (V5)         | CPU/mémoire/heap toutes les 5s, alertes configurables                   |
+| scanInitialFiles (V5)         | Comptage sans émission d'événements (pas de CPU flood au démarrage)     |
 
 ---
 
@@ -558,9 +631,9 @@ console.log(report.missingTools);
 ## Tests
 
 ```bash
-npm test              # 244 tests, 17 suites
+npm test              # 335 tests, 22 suites
 npm run test:watch    # Mode watch
-npm run typecheck     # Vérification TypeScript
+npm run typecheck     # Verification TypeScript
 npm run lint          # ESLint
 ```
 
@@ -572,10 +645,13 @@ npm run lint          # ESLint
 | `shared/circuit-breaker.ts`     | 11    | Circuit breaker, retryWithBackoff                |
 | `shared/unified-config.ts`      | 4     | Configuration unifiée                            |
 | `detection/filters.ts`          | 12    | Filtres extension, pattern, taille, presets      |
-| `prevention/validators.ts`      | 11    | JSON, patterns, registry                         |
+| `detection/events.ts`           | 13    | EventBus, trackListener, cleanupAllListeners     |
+| `detection/watcher.ts`          | 12    | Lifecycle, ignoreInitial, debouncing, extensions |
+| `prevention/validators.ts`      | 17    | JSON, patterns, ESLint, injection config         |
 | `prevention/config.ts`          | 14    | Config manager, async factory                    |
+| `prevention/scripts.ts`         | 27    | ScriptRunner, $FILE token, runWithLimit, V5     |
 | `trigger/rules.test.ts`         | 15    | Trigger rules, CRUD, import/export               |
-| `trigger/correctors.test.ts`    | 9     | Correctors, backup/rollback                      |
+| `trigger/correctors.test.ts`    | 31    | TextReplacement, Command, ESLintFix, Prettier   |
 | `trigger/notifiers.test.ts`     | 13    | Console, fichier, registry, utils                |
 | `server/http.test.ts`           | 8     | Health check, ready, metrics, 503                |
 | `injection/injection.test.ts`   | 45    | Templates, detector, injector, validator, scan   |
@@ -584,6 +660,8 @@ npm run lint          # ESLint
 | `environment/tool-detector.ts`  | 4     | ToolDetector, detection, cache                   |
 | `environment/dev-environment.ts`| 4     | DevEnvironment, IDE, shell                       |
 | `environment/env-reporter.ts`   | 4     | EnvReporter, banner                              |
+| `processor/processor.test.ts`   | 8     | ProcessingChain, ChainOrchestrator               |
+| `monitor/resource-monitor.test.ts`| 6   | ResourceMonitor, CPU/memoire/heap                |
 | `integration/pipeline.test.ts`  | 10    | Pipeline complet, drain, dry-run, rollback       |
 
 ---
@@ -594,7 +672,6 @@ npm run lint          # ESLint
 | ------------ | ------- | ------------------------------- |
 | Node.js      | ^24     | Runtime                         |
 | TypeScript   | ^5.9    | Langage                         |
-| Chokidar     | ^3.5    | File watcher                    |
 | ESLint       | ^8      | Linting                         |
 | Prettier     | ^2.8    | Formatage                       |
 | Winston      | ^3.8    | Logging                         |
@@ -613,6 +690,7 @@ npm run lint          # ESLint
 
 <div align="center">
   <sub>
+  <a href="./PLAN-DEV-V5.md">Plan de développement V5</a> ·
     <a href="./PLAN-DEV-V4.md">Plan de développement V4</a> ·
     <a href="./PLAN-DEV-V3.md">Plan de développement V3</a> ·
     <a href="./PLAN-DEV-V2.md">Plan de développement V2</a> ·

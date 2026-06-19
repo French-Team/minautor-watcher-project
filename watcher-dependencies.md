@@ -6,10 +6,8 @@ Après vérification, toutes les dépendances sélectionnées sont open source e
 
 ## 1. Surveillance de Fichiers (File Watching)
 
-- **Chokidar** (Meilleur choix) : Bibliothèque principale pour surveiller les changements en temps réel. Plus robuste et populaire que les alternatives comme fs.watch intégré à Node.js.
-  - NPM : `chokidar`
-  - Avantages : Gestion des événements, support pour les patterns glob, exclusion automatique, open source et maintenue activement.
-  - Utilisation : `const watcher = chokidar.watch('path/to/folder', {ignored: /node_modules/});`
+- **fs.watch natif** : Utilise le watcher intégré de Node.js avec `recursive: true`. Un seul handle Windows au lieu de milliers de watchers.
+  - Avantages : Zero dépendance externe, CPU ~0% au repos, support natif Node.js.
 
 ## 2. Linting et Formatage Automatique
 
@@ -76,7 +74,7 @@ Voici des dépendances open source et gratuites que j'ai ajoutées pour amélior
   - NPM : `helmet`
   - Avantages : Open source, gratuit, améliore la sécurité sans effort supplémentaire.
 
-- **glob** (Patterns de fichiers) : Pour matcher des fichiers avec des patterns glob avancés. Complète Chokidar pour une surveillance précise.
+- **glob** (Patterns de fichiers) : Pour matcher des fichiers avec des patterns glob avancés. Complète fs.watch pour une surveillance précise.
   - NPM : `glob`
   - Avantages : Open source, intégré à Node.js, utile pour les règles de fichiers.
 
@@ -89,7 +87,6 @@ Voici un `package.json` exemple avec les versions recommandées (toutes open sou
   "name": "watcher-service",
   "version": "1.0.0",
   "dependencies": {
-    "chokidar": "^3.5.3",
     "dotenv": "^16.0.3",
     "@slack/web-api": "^6.8.1",
     "slack-notify": "^2.0.1",
@@ -114,7 +111,7 @@ Voici un `package.json` exemple avec les versions recommandées (toutes open sou
 
 ## Étapes de Recherche Menées
 
-1. **File Watching** : Identification de Chokidar comme outil principal.
+1. **File Watching** : fs.watch natif Node.js (recursive: true) — zero dépendance.
 2. **Linting/Formatage** : Confirmation d'ESLint et Prettier avec intégration.
 3. **Notifications** : Sélection de @slack/web-api et notifme-sdk.
 4. **Configuration** : Dotenv comme standard.

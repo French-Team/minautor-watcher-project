@@ -10,6 +10,10 @@ export interface DetectionConfig {
     processingDelay: number;
     filterPreset?: "jsTsProject" | "minimal" | "comprehensive";
     customFilters?: FilterCriteria;
+    /** If true, emit FILE_ADDED for each existing file during initial scan */
+    processExisting?: boolean;
+    /** Delay (ms) between emitting each existing file event */
+    processExistingDelay?: number;
 }
 /**
  * Main detection module that orchestrates file watching, filtering, and event emission
@@ -31,6 +35,12 @@ export declare class DetectionModule {
      * Stop the detection module
      */
     stop(): Promise<void>;
+    /**
+     * Wait for the initial scan to complete
+     */
+    waitForScanComplete(): Promise<{
+        fileCount: number;
+    }>;
     /**
      * Update filter criteria
      */
